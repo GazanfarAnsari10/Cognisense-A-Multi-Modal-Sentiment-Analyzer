@@ -95,7 +95,6 @@ Cognisense/
 <li>Audio analyzed using MFCC and spectral features</li>
 <li>Images and video processed using facial emotion recognition</li>
 <li>Real-time webcam emotion detection</li>
-<li>Results visualized on dashboard</li>
 </ul>
 
 <hr>

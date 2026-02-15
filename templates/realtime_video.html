@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-content realtime-page">
+<h1>Realtime Webcam Analyzer</h1>
+
+<div class="realtime-grid">
+  <div>
+    <video id="webcam" autoplay playsinline width="320" height="240" style="border:1px solid #ccc;"></video>
+    <div style="margin-top:8px;">
+      <button id="startBtn">Start</button>
+      <button id="stopBtn" disabled>Stop</button>
+      <label>FPS:
+        <select id="fpsSelect">
+          <option value="1">1</option>
+          <option value="0.5">0.5</option>
+          <option value="2">2</option>
+        </select>
+      </label>
+    </div>
+  </div>
+
+  <div id="liveResults" style="padding-left:18px;">
+    <h3>Live Results</h3>
+    <div id="frameInfo">No frames yet.</div>
+    <ul id="history" style="max-height:400px;overflow:auto;padding-left:18px;"></ul>
+  </div>
+</div>
+
+<!-- Load Socket.IO client from CDN -->
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const startBtn = document.getElementById("startBtn");
+  const stopBtn = document.getElementById("stopBtn");
+  const videoEl = document.getElementById("webcam");
+  const frameInfo = document.getElementById("frameInfo");
+  const historyEl = document.getElementById("history");
+  const fpsSelect = document.getElementById("fpsSelect");
+
+  let stream = null;
+  let captureInterval = null;
+  let socket = null;
+
+  const SOCKET_EVENT = "realtime_frame";
+  const SOCKET_RESPONSE = "realtime_analysis";
+
+  function initSocket() {
+    if (socket) return;
+    socket = io();
+    socket.on("connect", () => console.log("Socket connected", socket.id));
+    socket.on(SOCKET_RESPONSE, (data) => renderAnalysis(data));
+    socket.on("disconnect", () => console.log("Socket disconnected"));
+  }
+
+  function renderAnalysis(data) {
+    if (!data) return;
+    const ts = new Date().toLocaleTimeString();
+    frameInfo.innerHTML = `<b>Last frame:</b> ${ts} — brightness: ${data.brightness ?? "N/A"} — top emotion: ${data.top_emotion ? data.top_emotion.label + " (" + data.top_emotion.score + ")" : "N/A"}`;
+    
+    const li = document.createElement("li");
+    li.innerText = `${ts}: brightness=${data.brightness ?? "N/A"}, top=${data.top_emotion ? data.top_emotion.label + " " + data.top_emotion.score : "N/A"} — ${data.ai_reasoning || ""}`;
+    historyEl.prepend(li);
+    if (historyEl.children.length > 50) historyEl.removeChild(historyEl.lastChild);
+  }
+
+  async function startCamera() {
+    initSocket();
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      videoEl.srcObject = stream;
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      beginCapture();
+    } catch (err) {
+      alert("Could not access webcam: " + err.message);
+    }
+  }
+
+  function stopCamera() {
+    if (captureInterval) {
+      clearInterval(captureInterval);
+      captureInterval = null;
+    }
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop());
+      stream = null;
+    }
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+  }
+
+  function beginCapture() {
+    const fps = parseFloat(fpsSelect.value) || 1;
+    const intervalMs = Math.max(250, Math.round(1000 / fps));
+    const canvas = document.createElement("canvas");
+    canvas.width = 320;
+    canvas.height = 240;
+    const ctx = canvas.getContext("2d");
+
+    captureInterval = setInterval(() => {
+      if (!videoEl || videoEl.readyState < 2) return;
+      ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
+      if (socket && socket.connected) socket.emit(SOCKET_EVENT, { image: dataUrl });
+    }, intervalMs);
+  }
+
+  startBtn.addEventListener("click", startCamera);
+  stopBtn.addEventListener("click", stopCamera);
+});
+</script>
+</div>
+{% endblock %}

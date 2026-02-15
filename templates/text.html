@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-content text-page">
+
+<h1>Text Sentiment Analyzer</h1>
+
+<form id="textForm">
+  <label>Paste text:</label>
+  <textarea name="text" id="textInput" rows="8" placeholder="Paste text here..."></textarea>
+
+  <label>Or upload a text file (TXT, DOCX, PDF):</label>
+  <input type="file" id="fileInput" name="file" accept=".txt,.docx,.pdf">
+
+  
+
+  <div class="form-row">
+    <button type="submit">Analyze</button>
+  </div>
+</form>
+
+
+<section id="result">
+  <!-- Analysis results will be displayed here -->
+</section>
+</div>
+
+<!-- Link the JS file -->
+<script src="{{ url_for('static', filename='js/text.js') }}"></script>
+{% endblock %}

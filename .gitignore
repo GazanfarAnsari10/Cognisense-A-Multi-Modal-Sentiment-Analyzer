@@ -1,0 +1,15 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# ML models
+*.h5
+*.pt
+*.pkl
+
+# uploads
+uploads/
+
+# OS files
+.DS_Store

@@ -1,0 +1,22 @@
+  {% extends "base.html" %}
+  {% block content %}
+
+  <div class="page-content audio-page">
+  <h1>Audio Sentiment Analyzer</h1>
+
+  <form id="audioForm" enctype="multipart/form-data">
+    <label>Upload audio file (mp3, wav):</label>
+    <input type="file" name="file" id="audioFile" accept="audio/*" />
+    
+    <div class="form-row">
+      <button type="submit">Analyze</button>
+    </div>
+
+  </form>
+
+
+  <section id="result">
+  </section>
+  </div>
+
+  {% endblock %}

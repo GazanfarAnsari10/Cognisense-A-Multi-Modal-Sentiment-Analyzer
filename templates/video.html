@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-content video-page"></div>
+<h1>Video Sentiment Analyzer</h1>
+
+
+<form id="videoForm" enctype="multipart/form-data">
+  <label>Upload video (mp4, mov, mkv):</label>
+  <input type="file" name="file" id="videoFile" accept="video/*" />
+  <div class="form-row">
+    <button type="submit">Analyze</button>
+  </div>
+</form>
+
+<section id="result">
+</section>
+</div>
+{% endblock %}

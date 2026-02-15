@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block content %}
+
+
+
+<div class="main" id="main">
+  <div class="homepage-hero">
+
+    <!-- Hero SVG Logo -->
+    <div class="hero-logo">
+      <svg xmlns="http://www.w3.org/2000/svg" width="90" height="90" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-brain-circuit-icon lucide-brain-circuit">
+      <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M9 13a4.5 4.5 0 0 0 3-4"/><path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/><path d="M3.477 10.896a4 4 0 0 1 .585-.396"/><path d="M6 18a4 4 0 0 1-1.967-.516"/><path d="M12 13h4"/><path d="M12 18h6a2 2 0 0 1 2 2v1"/><path d="M12 8h8"/><path d="M16 8V5a2 2 0 0 1 2-2"/><circle cx="16" cy="13" r=".5"/><circle cx="18" cy="3" r=".5"/><circle cx="20" cy="21" r=".5"/><circle cx="20" cy="8" r=".5"/>
+    </svg>
+    </div>
+ <h1>Welcome to Cognisense</h1>
+ <p>Transforming online discourse into actionable insghts.</p>
+
+
+
+ <div class="card-container">
+        <div class="info-card">
+            <div class="card-header">
+                <h2>What is Cognisense - a Multimodal Sentiment Analyzer?</h2>
+                <p class="subtitle">Understanding emotions across different data types</p>
+            </div>
+            
+            <div class="card-body">
+                <p class="basic-info">
+                     <strong>Cognisense - A Multimodal Sentiment Analyzer</strong> is an advanced AI system that detects and interprets emotions by analyzing multiple types of data simultaneously—such as text, voice, facial expressions—to provide a comprehensive understanding of sentiment.
+                </p>
+
+                <div class="icon-grid">
+                    <div class="icon-item">
+                        <div class="icon"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#1f1f1f">
+                            <path d="M200-280h560v-80H200v80Zm0-160h560v-80H200v80Zm0-160h400v-80H200v80Zm-40 440q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h640q33 0 56.5 23.5T880-720v480q0 33-23.5 56.5T800-160H160Zm0-80h640v-480H160v480Zm0 0v-480 480Z"/>
+                        </svg></div>
+                        <span>Text Analysis</span>
+                    </div>
+                    <div class="icon-item">
+                        <div class="icon"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#1f1f1f">
+                            <path d="M240-520h60v-80h-60v80Zm100 80h60v-240h-60v240Zm110 80h60v-400h-60v400Zm110-80h60v-240h-60v240Zm100-80h60v-80h-60v80ZM80-80v-720q0-33 23.5-56.5T160-880h640q33 0 56.5 23.5T880-800v480q0 33-23.5 56.5T800-240H240L80-80Zm126-240h594v-480H160v525l46-45Zm-46 0v-480 480Z"/>
+                        </svg></div>
+                        <span>Voice Tone</span>
+                    </div>
+                    <div class="icon-item">
+                        <div class="icon"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#1f1f1f">
+                            <path d="M480-160q-134 0-227-93t-93-227q0-134 93-227t227-93q134 0 227 93t93 227q0 134-93 227t-227 93Zm0-80q100 0 170-70t70-170q0-17-2.5-33.5T710-546q-15 3-30 4.5t-30 1.5q-63 0-120-24t-102-70q-28 57-77 99t-111 61q3 98 72.5 166T480-240ZM256-566q44-23 67-53.5t45-72.5q-38 20-67 52.5T256-566Zm124 166q-17 0-28.5-11.5T340-440q0-17 11.5-28.5T380-480q17 0 28.5 11.5T420-440q0 17-11.5 28.5T380-400Zm270-220h12q6 0 12-1-33-45-83.5-72T480-720h-12q-6 0-11 1 39 45 82.5 72T650-620Zm-70 220q-17 0-28.5-11.5T540-440q0-17 11.5-28.5T580-480q17 0 28.5 11.5T620-440q0 17-11.5 28.5T580-400ZM40-720v-120q0-33 23.5-56.5T120-920h120v80H120v120H40ZM240-40H120q-33 0-56.5-23.5T40-120v-120h80v120h120v80Zm480 0v-80h120v-120h80v120q0 33-23.5 56.5T840-40H720Zm120-680v-120H720v-80h120q33 0 56.5 23.5T920-840v120h-80Zm-383 1Zm-89 27Z"/>
+                        </svg></div>
+                        <span>Facial Emotions</span>
+                    </div>
+                </div>
+
+                <button class="learn-more-btn" id="learnMoreBtn">
+                    <span>Learn More</span>
+                    <span class="arrow" id="arrow">▼</span>
+                </button>
+            </div>
+
+           <div class="expanded-content" id="expandedContent">
+                <div class="detailed-info">
+                    <div class="detail-section">
+                        <h3> <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#1f1f1f">
+                            <path d="M480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q65 0 123 19t107 53l-58 59q-38-24-81-37.5T480-800q-133 0-226.5 93.5T160-480q0 133 93.5 226.5T480-160q32 0 62-6t58-17l60 61q-41 20-86 31t-94 11Zm280-80v-120H640v-80h120v-120h80v120h120v80H840v120h-80ZM424-296 254-466l56-56 114 114 400-401 56 56-456 457Z"/>
+                        </svg>How It Works</h3>
+                        <p>
+Unlike traditional sentiment analysis, which often relies only on text, a multi-modal system combines cues like facial expressions, tone of voice, gestures, and written content. By merging these channels, it delivers a more accurate understanding of human emotion, making it useful for customer service, healthcare, content moderation, and human-AI interaction.                        </p>
+                    </div>
+
+                    
+                    </div>
+
+                    <div class="detail-section">
+                        <div class="highlight">
+                            <strong>🔬 Why Multimodal?</strong><br><br>
+                            Human communication is naturally multimodal—we use words, tone, and body language together. A multimodal approach captures this complexity, detecting nuances that single-mode systems miss, such as when someone says "I'm fine" but their tone suggests otherwise.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+<!-- ======= ANALYZER CAROUSEL (replaces static features-grid) ======= -->
+  <section class="analyzer-carousel">
+    <h2 class="carousel-title">Cognisense provides:</h2>
+
+    <div class="carousel-wrapper">
+      <button class="carousel-arrow left" aria-label="Scroll left"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#1f1f1f">
+        <path d="M640-80 240-480l400-400 71 71-329 329 329 329-71 71Z"/>
+    </svg></button>
+
+      <div class="carousel-track" id="carouselTrack">
+        <article class="carousel-card">
+          <div class="feature-icon"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#1f1f1f">
+            <path d="M280-280h280v-80H280v80Zm0-160h400v-80H280v80Zm0-160h400v-80H280v80Zm-80 480q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm0-560v560-560Z"/>
+        </svg>
+          </div>
+          <h3>Text Analysis</h3>
+          <p>Analyze sentiment from text documents, social media posts, reviews, and more with advanced NLP algorithms.</p>
+        </article>
+
+        <article class="carousel-card">
+          <div class="feature-icon"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#1f1f1f">
+            <path d="M160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h480q33 0 56.5 23.5T720-720v180l160-160v440L720-420v180q0 33-23.5 56.5T640-160H160Zm0-80h480v-480H160v480Zm0 0v-480 480Z"/>
+        </svg></div>
+          <h3>Video Analysis</h3>
+          <p>Extract emotions from video content using facial expression recognition and voice tone analysis.</p>
+        </article>
+
+        <article class="carousel-card">
+          <div class="feature-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-audio-lines-icon lucide-audio-lines">
+            <path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/>
+        </svg>
+        </div>
+          <h3>Audio Analysis</h3>
+          <p>Detect sentiment from voice recordings, podcasts, and audio files through speech pattern recognition.</p>
+        </article>
+
+        <article class="carousel-card">
+          <div class="feature-icon"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#1f1f1f">
+            <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z"/>
+        </svg>
+    </div>
+          <h3>Image Analysis</h3>
+          <p>Upload and analyze the sentiment from the images and image files.</p>
+        </article>
+
+        <article class="carousel-card">
+          <div class="feature-icon"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#1f1f1f">
+            <path d="M371-200h218l-20-80H391l-20 80Zm-11-160h240q83 0 141.5-58.5T800-560q0-83-58.5-141.5T600-760H360q-83 0-141.5 58.5T160-560q0 83 58.5 141.5T360-360Zm120-120q-33 0-56.5-23.5T400-560q0-33 23.5-56.5T480-640q33 0 56.5 23.5T560-560q0 33-23.5 56.5T480-480ZM260-600q17 0 28.5-11.5T300-640q0-17-11.5-28.5T260-680q-17 0-28.5 11.5T220-640q0 17 11.5 28.5T260-600ZM160-120v-80h129l21-84q-99-17-164.5-94.5T80-560q0-117 81.5-198.5T360-840h240q117 0 198.5 81.5T880-560q0 104-65.5 181.5T650-284l21 84h129v80H160Zm320-280q66 0 113-47t47-113q0-66-47-113t-113-47q-66 0-113 47t-47 113q0 66 47 113t113 47Zm0-160ZM371-200h218-218Z"/>
+        </svg>
+    </div>
+          <h3>Real-Time Video Analysis</h3>
+          <p>Analyze sentiment in Real-Time directly form the web-cam like never before!</p>
+        </article>
+
+        <article class="carousel-card">
+          <div class="feature-icon"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#1f1f1f">
+            <path d="M480-480v-400q0-17 11.5-28.5T520-920q17 0 28.5 11.5T560-880v400h-80Zm-160 0v-360q0-17 11.5-28.5T360-880q17 0 28.5 11.5T400-840v360h-80ZM500-40q-142 0-241-99t-99-241v-380q0-17 11.5-28.5T200-800q17 0 28.5 11.5T240-760v380q0 109 75.5 184.5T500-120q109 0 184.5-75.5T760-380v-140q-17 0-28.5 11.5T720-480v160H600q-33 0-56.5 23.5T520-240v40h-80v-40q0-66 47-113t113-47h40v-400q0-17 11.5-28.5T680-840q17 0 28.5 11.5T720-800v207q10-3 19.5-5t20.5-2h80v220q0 142-99 241T500-40Zm40-320Z"/>
+        </svg></div>
+          <h3>Palmistry Analysis</h3>
+          <p>Want to know what your palm indicates about you ? We got you with our Palmistry Analyzer.</p>
+        </article>
+      </div>
+
+      <button class="carousel-arrow right" aria-label="Scroll right"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#1f1f1f">
+        <path d="m321-80-71-71 329-329-329-329 71-71 400 400L321-80Z"/>
+    </svg>
+</button>
+    </div>
+
+   
+  </section>
+  <!-- ======= /ANALYZER CAROUSEL ======= -->
+
+
+
+
+ <div class="cta-section">
+           <a href="/text"><button class="cta-button">Get Started Now</button></a>
+        </div>
+
+<footer class="footer">
+    <div class="footer-container">
+
+       <div class="footer-brand">
+    <div class="footer-logo">
+        <!-- your SVG -->
+       <svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-brain-icon lucide-brain">
+<path d="M12 18V5"/><path d="M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4"/><path d="M17.598 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.598 1.5"/><path d="M17.997 5.125a4 4 0 0 1 2.526 5.77"/><path d="M18 18a4 4 0 0 0 2-7.464"/><path d="M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517"/><path d="M6 18a4 4 0 0 1-2-7.464"/><path d="M6.003 5.125a4 4 0 0 0-2.526 5.77"/>
+</svg>
+    </div>
+
+    <div>
+        <h2>Cognisense</h2>
+        <p>Multimodal Sentiment Analysis Platform</p>
+    </div>
+</div>
+
+
+        <div class="footer-links">
+            <h3>Quick Links</h3>
+            <a href="/">Home</a>
+            <a href="/text">Text Analyzer</a>
+            <a href="/audio">Audio Analyzer</a>
+            <a href="/video">Video Analyzer</a>
+        </div>
+
+        <div class="footer-info">
+            <h3>About Cognisense</h3>
+            <p>
+                Cognisense is a multimodal sentiment analyzer enabling text, audio, and video-based emotional intelligence with modern visualization and AI-powered insights.
+            </p>
+        </div>
+
+        <div class="footer-contact">
+            <h3>Contact Us</h3>
+            <p>Email: support@cognisense.ai</p>
+        </div>
+
+    </div>
+
+    <div class="footer-bottom">
+        <p>© 2025 Cognisense. All rights reserved.</p>
+    </div>
+</footer>
+{% endblock %}

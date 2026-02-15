@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Cognisense — Multi-Modal Sentiment Analyzer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  </head>
+  <body class="light">
+    
+          <button class="toggle-btn" id="sidebarToggle">☰</button>
+          <button class="mode-toggle" id="modeToggle">☽</button>
+    <div class="app">
+        
+
+
+      <aside class="sidebar" id="sidebar">
+
+           <div class="brand-logo">
+            <span class="logo-svg">
+                <!-- SVG Inline LOGO -->
+                <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-brain-icon lucide-brain">
+<path d="M12 18V5"/><path d="M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4"/><path d="M17.598 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.598 1.5"/><path d="M17.997 5.125a4 4 0 0 1 2.526 5.77"/><path d="M18 18a4 4 0 0 0 2-7.464"/><path d="M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517"/><path d="M6 18a4 4 0 0 1-2-7.464"/><path d="M6.003 5.125a4 4 0 0 0-2.526 5.77"/>
+</svg>
+            </span>
+
+            <span class="brand-text">Cognisense</span><br>
+            <br><p>Multimodal sentiment analyzer</p>
+        </div>
+          
+          <nav>
+          <a href="/"><i class="fas fa-home"></i> Home</a>
+          <a href="/text"><i class="fas fa-file-alt"></i> Text Analyzer</a>
+          <a href="/audio"><i class="fas fa-microphone"></i> Audio Analyzer</a>
+          <a href="/video"><i class="fas fa-video"></i> Video Analyzer</a>
+          <a href="{{ url_for('image') }}"><i class="fas fa-image"></i> Image Analyzer</a>
+          <a href="{{ url_for('realtime_video_page') }}"><i class="fas fa-camera"></i> Real-Time Video Analyzer</a>
+          <a href="http://127.0.0.1:5001"><i class="fas fa-hand-paper"></i> Palmistry Analyzer</a>
+      
+        </nav>
+      </aside>
+
+      
+
+      <main class="content" id="content">
+        {% block content %}{% endblock %}
+        <!-- Chart container for dynamic results -->
+        <div id="chartContainer" class="card" style="margin-top:20px; display:none;">
+          <h3>Emotion/Analysis Chart</h3>
+          <canvas id="analysisChart" width="400" height="200"></canvas>
+        </div>
+      </main>
+    </div>
+
+
+
+
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/chart.js') }}"></script>
+  </body>
+</html>

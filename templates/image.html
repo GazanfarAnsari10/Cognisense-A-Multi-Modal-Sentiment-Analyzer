@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block content %}
+
+
+<div class="page-content image-page">
+<h1>Image Sentiment Analyzer</h1>
+
+<form id="imageForm" enctype="multipart/form-data">
+  <label>Select image:</label>
+  <input type="file" id="imageFile" name="file" accept="image/*" required />
+  <div class="form-row">
+    <button type="submit">Analyze</button>
+  </div>
+</form>
+
+<section id="result">
+  <!-- results go here -->
+</section>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const imageForm = document.getElementById("imageForm");
+  const fileInput = document.getElementById("imageFile");
+  const resultBox = document.getElementById("result");
+
+  imageForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    if (!fileInput.files.length) {
+      alert("Please select an image file.");
+      return;
+    }
+
+    let formData = new FormData();
+    formData.append("file", fileInput.files[0]);
+
+    resultBox.innerHTML = "<p>Analyzing image...</p>";
+
+    try {
+      const resp = await fetch("/api/analyze/image", {
+        method: "POST",
+        body: formData
+      });
+
+      if (!resp.ok) throw new Error("Server error: " + resp.statusText);
+
+      const data = await resp.json();
+      let out = "<h3>Analysis Results</h3>";
+
+      if (data.error) {
+        out += `<p style="color:red;"><b>Error:</b> ${data.error}</p>`;
+      } else {
+        if (data.overall) {
+          out += `<p><b>Overall:</b> ${data.overall.label} — score ${data.overall.score}</p>`;
+        }
+
+        if (data.emotions) {
+          out += "<h4>All emotions:</h4><ul>";
+          for (let [emo, val] of Object.entries(data.emotions)) {
+            out += `<li>${emo}: ${val.toFixed(3)}</li>`;
+          }
+          out += "</ul>";
+        }
+
+        if (data.ai_reasoning) {
+          out += `<h4>AI Reasoning</h4><p>${data.ai_reasoning}</p>`;
+        }
+      }
+
+      resultBox.innerHTML = out;
+
+    } catch (err) {
+      resultBox.innerHTML = `<p style='color:red;'>Request failed: ${err}</p>`;
+    }
+  });
+});
+</script>
+</div>
+{% endblock %}
+

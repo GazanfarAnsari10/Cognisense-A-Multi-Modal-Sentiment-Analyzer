@@ -135,7 +135,7 @@ B.Tech – Artificial Intelligence & Machine Learning
 <a href="https://www.linkedin.com/in/mohammad-gazanfar-ansari" target="_blank">
 LinkedIn</a>
 &nbsp; | &nbsp;
-<a href="gazi.freestyle@gmail.com">
+<a href="mailto:gazi.freestyle@gmail.com">
 Email</a>
 </p>
 

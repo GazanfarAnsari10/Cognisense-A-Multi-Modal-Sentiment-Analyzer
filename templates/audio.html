@@ -1,22 +1,206 @@
-  {% extends "base.html" %}
-  {% block content %}
+{% extends "base.html" %}
+{% block content %}
 
-  <div class="page-content audio-page">
-  <h1>Audio Sentiment Analyzer</h1>
+<div class="page-content audio-page">
 
-  <form id="audioForm" enctype="multipart/form-data">
-    <label>Upload audio file (mp3, wav):</label>
-    <input type="file" name="file" id="audioFile" accept="audio/*" />
-    
-    <div class="form-row">
-      <button type="submit">Analyze</button>
+  <!-- ===== PAGE HEADER ===== -->
+  <div class="page-header">
+    <div class="page-header-icon">
+      <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/>
+        <path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/>
+      </svg>
+    </div>
+    <div class="page-header-text">
+      <div class="page-eyebrow">
+        <span class="eyebrow-dot"></span> Speech Engine
+      </div>
+      <h1>Audio Sentiment Analyzer</h1>
+      <p class="page-subtitle">Upload a voice recording and let Cognisense reveal the emotion in every spoken word.</p>
+    </div>
+  </div>
+  <!-- ===== /PAGE HEADER ===== -->
+
+
+  <!-- ===== ANALYZER PANEL ===== -->
+  <div class="analyzer-panel">
+
+    <!-- Left: Input -->
+    <div class="analyzer-input-col">
+
+      <form id="audioForm" enctype="multipart/form-data">
+
+        <!-- File upload block -->
+        <div class="input-block">
+          <label class="input-label">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Upload audio file
+          </label>
+
+          <label class="file-drop-zone audio-drop-zone" id="audioDropZone" for="audioFile">
+            <div class="audio-waveform-preview" id="audioWaveformIdle">
+              <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/>
+                <path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/>
+              </svg>
+            </div>
+            <div class="file-drop-text">
+              <span class="file-drop-primary">Click to browse or drag & drop</span>
+              <span class="file-drop-secondary">Supports MP3, WAV, M4A, OGG, FLAC</span>
+            </div>
+            <input type="file" name="file" id="audioFile" accept="audio/*" style="display:none;">
+          </label>
+
+          <!-- Selected file display -->
+          <div class="file-name-display" id="audioFileDisplay" style="display:none;">
+            <div class="audio-file-info">
+              <div class="audio-file-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/>
+                </svg>
+              </div>
+              <div class="audio-file-meta">
+                <span id="audioFileName" class="audio-filename-text"></span>
+                <span id="audioFileSize" class="audio-filesize-text"></span>
+              </div>
+              <button type="button" class="file-clear-btn" id="audioClearBtn">✕</button>
+            </div>
+
+            <!-- Fake waveform visualizer (purely decorative) -->
+            <div class="waveform-bars" id="waveformBars">
+              <span></span><span></span><span></span><span></span><span></span>
+              <span></span><span></span><span></span><span></span><span></span>
+              <span></span><span></span><span></span><span></span><span></span>
+              <span></span><span></span><span></span><span></span><span></span>
+              <span></span><span></span><span></span><span></span><span></span>
+              <span></span><span></span><span></span><span></span><span></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Submit -->
+        <div class="form-row">
+          <button type="submit" class="analyze-btn">
+            <span class="analyze-btn-text">Analyze Audio</span>
+            <span class="analyze-btn-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </span>
+            <span class="analyze-btn-loader" style="display:none;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+            </span>
+          </button>
+        </div>
+
+      </form>
     </div>
 
-  </form>
+    <!-- Right: Info panel -->
+    <div class="analyzer-info-col">
+      <div class="info-panel">
+        <div class="info-panel-header">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+          How it works
+        </div>
+        <ul class="info-panel-steps">
+          <li>
+            <span class="step-num">01</span>
+            <div>
+              <strong>Upload</strong>
+              <p>Select an MP3, WAV, or other audio file from your device.</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-num">02</span>
+            <div>
+              <strong>Speech Processing</strong>
+              <p>The engine transcribes speech and analyzes tone, pitch, and pacing cues.</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-num">03</span>
+            <div>
+              <strong>Results</strong>
+              <p>Receive an emotional profile with sentiment scores across multiple dimensions.</p>
+            </div>
+          </li>
+        </ul>
+        <div class="info-panel-tip">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          Tip: Clear recordings with minimal background noise yield the best results.
+        </div>
 
+        <!-- Supported formats pill list -->
+        <div class="supported-formats">
+          <span class="format-label">Supported:</span>
+          <span class="format-pill">MP3</span>
+          <span class="format-pill">WAV</span>
+          <span class="format-pill">M4A</span>
+          <span class="format-pill">OGG</span>
+          <span class="format-pill">FLAC</span>
+        </div>
+      </div>
+    </div>
 
-  <section id="result">
-  </section>
   </div>
+  <!-- ===== /ANALYZER PANEL ===== -->
 
-  {% endblock %}
+
+  <!-- ===== RESULTS SECTION ===== -->
+  <section id="result">
+    <!-- Analysis results will be displayed here -->
+  </section>
+  <!-- ===== /RESULTS SECTION ===== -->
+
+</div>
+
+<!-- UI enhancement script (no logic touched) -->
+<script>
+  const audioFile    = document.getElementById('audioFile');
+  const audioDisplay = document.getElementById('audioFileDisplay');
+  const audioDropZone = document.getElementById('audioDropZone');
+  const audioFileName = document.getElementById('audioFileName');
+  const audioFileSize = document.getElementById('audioFileSize');
+  const audioClearBtn = document.getElementById('audioClearBtn');
+
+  function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  }
+
+  function showAudioFile(file) {
+    audioFileName.textContent = file.name;
+    audioFileSize.textContent = formatBytes(file.size);
+    audioDisplay.style.display = 'block';
+    audioDropZone.classList.add('has-file');
+  }
+
+  if (audioFile) {
+    audioFile.addEventListener('change', () => {
+      if (audioFile.files.length > 0) showAudioFile(audioFile.files[0]);
+    });
+  }
+
+  if (audioClearBtn) {
+    audioClearBtn.addEventListener('click', () => {
+      audioFile.value = '';
+      audioDisplay.style.display = 'none';
+      audioDropZone.classList.remove('has-file');
+    });
+  }
+
+  if (audioDropZone) {
+    audioDropZone.addEventListener('dragover',  (e) => { e.preventDefault(); audioDropZone.classList.add('drag-over'); });
+    audioDropZone.addEventListener('dragleave', () => audioDropZone.classList.remove('drag-over'));
+    audioDropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      audioDropZone.classList.remove('drag-over');
+      if (e.dataTransfer.files.length > 0) {
+        audioFile.files = e.dataTransfer.files;
+        showAudioFile(e.dataTransfer.files[0]);
+      }
+    });
+  }
+</script>
+
+{% endblock %}

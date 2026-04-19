@@ -1,27 +1,35 @@
 // static/js/text.js
 
 document.addEventListener("DOMContentLoaded", () => {
-    const form = document.getElementById("textForm");
-    const textInput = document.getElementById("textInput");
-    const fileInput = document.getElementById("fileInput");
+    const form          = document.getElementById("textForm");
+    const textInput     = document.getElementById("textInput");
+    const fileInput     = document.getElementById("fileInput");
     const resultSection = document.getElementById("result");
-  const textName = document.getElementById("text-name");
 
-    fileInput.addEventListener("change", function () {
-  if (this.files && this.files.length > 0) {
-    textName.textContent = this.files[0].name;
-  } else {
-    textName.textContent = "No file chosen";
-  }
-});
+    // ── File name display (new UI element, replaces missing #text-name) ──
+    // The new HTML uses #fileNameText + #fileNameDisplay instead of #text-name.
+    // We wire into those if present; if neither exists we skip silently.
+    const fileNameDisplay = document.getElementById("fileNameDisplay");
+    const fileNameText    = document.getElementById("fileNameText");
 
+    if (fileInput) {
+        fileInput.addEventListener("change", function () {
+            if (this.files && this.files.length > 0) {
+                // Update the new styled file display
+                if (fileNameText)    fileNameText.textContent = this.files[0].name;
+                if (fileNameDisplay) fileNameDisplay.style.display = "flex";
+            } else {
+                if (fileNameDisplay) fileNameDisplay.style.display = "none";
+            }
+        });
+    }
+
+    // ── Form submit (ALL ORIGINAL LOGIC — UNTOUCHED) ─────────────────────
     form.addEventListener("submit", async (e) => {
         e.preventDefault();
         resultSection.innerHTML = "<p>Analyzing...</p>";
 
         const formData = new FormData();
-
-
 
         // Check if a file is uploaded
         if (fileInput.files.length > 0) {
@@ -53,6 +61,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    // ── Render helpers (ALL ORIGINAL — UNTOUCHED) ────────────────────────
     function renderResult(data) {
         let html = "";
 

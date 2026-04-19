@@ -1,29 +1,200 @@
 {% extends "base.html" %}
 {% block content %}
+
 <div class="page-content text-page">
 
-<h1>Text Sentiment Analyzer</h1>
-
-<form id="textForm">
-  <label>Paste text:</label>
-  <textarea name="text" id="textInput" rows="8" placeholder="Paste text here..."></textarea>
-
-  <label>Or upload a text file (TXT, DOCX, PDF):</label>
-  <input type="file" id="fileInput" name="file" accept=".txt,.docx,.pdf">
-
-  
-
-  <div class="form-row">
-    <button type="submit">Analyze</button>
+  <!-- ===== PAGE HEADER ===== -->
+  <div class="page-header">
+    <div class="page-header-icon">
+      <svg xmlns="http://www.w3.org/2000/svg" height="28px" viewBox="0 -960 960 960" width="28px" fill="currentColor">
+        <path d="M280-280h280v-80H280v80Zm0-160h400v-80H280v80Zm0-160h400v-80H280v80Zm-80 480q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm0-560v560-560Z"/>
+      </svg>
+    </div>
+    <div class="page-header-text">
+      <div class="page-eyebrow">
+        <span class="eyebrow-dot"></span> NLP Engine
+      </div>
+      <h1>Text Sentiment Analyzer</h1>
+      <p class="page-subtitle">Paste or upload text and let Cognisense decode the emotion within.</p>
+    </div>
   </div>
-</form>
+  <!-- ===== /PAGE HEADER ===== -->
 
 
-<section id="result">
-  <!-- Analysis results will be displayed here -->
-</section>
+  <!-- ===== ANALYZER PANEL ===== -->
+  <div class="analyzer-panel">
+
+    <!-- Left: Input -->
+    <div class="analyzer-input-col">
+
+      <form id="textForm">
+
+        <!-- Textarea input block -->
+        <div class="input-block">
+          <label class="input-label" for="textInput">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 6.1H3M21 12.1H3M15.1 18H3"/></svg>
+            Paste your text
+          </label>
+          <div class="textarea-wrapper">
+            <textarea
+              name="text"
+              id="textInput"
+              rows="10"
+              placeholder="Type or paste text here to analyze its sentiment…"
+            ></textarea>
+            <div class="textarea-corner"></div>
+            <div class="char-count" id="charCount">0 characters</div>
+          </div>
+        </div>
+
+        <!-- Divider -->
+        <div class="input-or-divider">
+          <span></span><em>or</em><span></span>
+        </div>
+
+        <!-- File upload block -->
+        <div class="input-block">
+          <label class="input-label">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+            Upload a file
+          </label>
+          <label class="file-drop-zone" id="fileDropZone" for="fileInput">
+            <div class="file-drop-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            </div>
+            <div class="file-drop-text">
+              <span class="file-drop-primary">Click to browse or drag & drop</span>
+              <span class="file-drop-secondary">Supports TXT, DOCX, PDF</span>
+            </div>
+            <input type="file" id="fileInput" name="file" accept=".txt,.docx,.pdf" style="display:none;">
+          </label>
+          <div class="file-name-display" id="fileNameDisplay" style="display:none;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <span id="fileNameText"></span>
+            <button type="button" class="file-clear-btn" id="fileClearBtn">✕</button>
+          </div>
+        </div>
+
+        <!-- Submit -->
+        <div class="form-row">
+          <button type="submit" class="analyze-btn">
+            <span class="analyze-btn-text">Analyze Sentiment</span>
+            <span class="analyze-btn-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </span>
+            <span class="analyze-btn-loader" style="display:none;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+            </span>
+          </button>
+        </div>
+
+      </form>
+    </div>
+
+    <!-- Right: Info panel -->
+    <div class="analyzer-info-col">
+      <div class="info-panel">
+        <div class="info-panel-header">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+          How it works
+        </div>
+        <ul class="info-panel-steps">
+          <li>
+            <span class="step-num">01</span>
+            <div>
+              <strong>Input</strong>
+              <p>Paste raw text or upload a TXT, DOCX, or PDF file.</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-num">02</span>
+            <div>
+              <strong>NLP Processing</strong>
+              <p>Advanced models tokenize and parse your content for emotional cues.</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-num">03</span>
+            <div>
+              <strong>Results</strong>
+              <p>Get a detailed sentiment breakdown with confidence scores.</p>
+            </div>
+          </li>
+        </ul>
+        <div class="info-panel-tip">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          Tip: Longer, richer text yields more accurate sentiment scores.
+        </div>
+      </div>
+    </div>
+
+  </div>
+  <!-- ===== /ANALYZER PANEL ===== -->
+
+
+  <!-- ===== RESULTS SECTION ===== -->
+  <section id="result">
+    <!-- Analysis results will be displayed here -->
+  </section>
+  <!-- ===== /RESULTS SECTION ===== -->
+
 </div>
 
 <!-- Link the JS file -->
 <script src="{{ url_for('static', filename='js/text.js') }}"></script>
+
+<!-- UI enhancement script (no logic touched) -->
+<script>
+  // Character counter
+  const textInput = document.getElementById('textInput');
+  const charCount = document.getElementById('charCount');
+  if (textInput && charCount) {
+    textInput.addEventListener('input', () => {
+      const len = textInput.value.length;
+      charCount.textContent = len.toLocaleString() + ' character' + (len !== 1 ? 's' : '');
+    });
+  }
+
+  // File name display
+  const fileInput = document.getElementById('fileInput');
+  const fileNameDisplay = document.getElementById('fileNameDisplay');
+  const fileNameText = document.getElementById('fileNameText');
+  const fileClearBtn = document.getElementById('fileClearBtn');
+  const fileDropZone = document.getElementById('fileDropZone');
+
+  if (fileInput) {
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length > 0) {
+        fileNameText.textContent = fileInput.files[0].name;
+        fileNameDisplay.style.display = 'flex';
+        fileDropZone.classList.add('has-file');
+      }
+    });
+  }
+
+  if (fileClearBtn) {
+    fileClearBtn.addEventListener('click', () => {
+      fileInput.value = '';
+      fileNameDisplay.style.display = 'none';
+      fileDropZone.classList.remove('has-file');
+    });
+  }
+
+  // Drag and drop highlight
+  if (fileDropZone) {
+    fileDropZone.addEventListener('dragover', (e) => { e.preventDefault(); fileDropZone.classList.add('drag-over'); });
+    fileDropZone.addEventListener('dragleave', () => fileDropZone.classList.remove('drag-over'));
+    fileDropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      fileDropZone.classList.remove('drag-over');
+      if (e.dataTransfer.files.length > 0) {
+        fileInput.files = e.dataTransfer.files;
+        fileNameText.textContent = e.dataTransfer.files[0].name;
+        fileNameDisplay.style.display = 'flex';
+        fileDropZone.classList.add('has-file');
+      }
+    });
+  }
+</script>
+
 {% endblock %}

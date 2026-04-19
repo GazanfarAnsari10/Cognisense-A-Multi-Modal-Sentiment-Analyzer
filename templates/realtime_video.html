@@ -1,34 +1,139 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="page-content realtime-page">
-<h1>Realtime Webcam Analyzer</h1>
 
-<div class="realtime-grid">
-  <div>
-    <video id="webcam" autoplay playsinline width="320" height="240" style="border:1px solid #ccc;"></video>
-    <div style="margin-top:8px;">
-      <button id="startBtn">Start</button>
-      <button id="stopBtn" disabled>Stop</button>
-      <label>FPS:
-        <select id="fpsSelect">
-          <option value="1">1</option>
-          <option value="0.5">0.5</option>
-          <option value="2">2</option>
-        </select>
-      </label>
+<div class="page-content realtime-page">
+
+  <!-- ===== PAGE HEADER ===== -->
+  <div class="page-header">
+    <div class="page-header-icon">
+      <svg xmlns="http://www.w3.org/2000/svg" height="28px" viewBox="0 -960 960 960" width="28px" fill="currentColor">
+        <path d="M371-200h218l-20-80H391l-20 80Zm-11-160h240q83 0 141.5-58.5T800-560q0-83-58.5-141.5T600-760H360q-83 0-141.5 58.5T160-560q0 83 58.5 141.5T360-360Zm120-120q-33 0-56.5-23.5T400-560q0-33 23.5-56.5T480-640q33 0 56.5 23.5T560-560q0 33-23.5 56.5T480-480ZM160-120v-80h129l21-84q-99-17-164.5-94.5T80-560q0-117 81.5-198.5T360-840h240q117 0 198.5 81.5T880-560q0 104-65.5 181.5T650-284l21 84h129v80H160Z"/>
+      </svg>
+    </div>
+    <div class="page-header-text">
+      <div class="page-eyebrow">
+        <span class="eyebrow-dot pulse"></span> Live Session
+      </div>
+      <h1>Real-Time Webcam Analyzer</h1>
+      <p class="page-subtitle">Stream live from your webcam and get instant emotional intelligence — frame by frame.</p>
     </div>
   </div>
+  <!-- ===== /PAGE HEADER ===== -->
 
-  <div id="liveResults" style="padding-left:18px;">
-    <h3>Live Results</h3>
-    <div id="frameInfo">No frames yet.</div>
-    <ul id="history" style="max-height:400px;overflow:auto;padding-left:18px;"></ul>
+
+  <!-- ===== REALTIME GRID ===== -->
+  <div class="realtime-grid">
+
+    <!-- Left col: webcam + controls -->
+    <div class="realtime-left">
+
+      <!-- Camera feed card -->
+      <div class="webcam-card">
+        <div class="webcam-card-header">
+          <span class="webcam-live-badge" id="liveBadge">
+            <span class="live-dot"></span> IDLE
+          </span>
+          <span class="webcam-fps-display" id="fpsDisplay">— fps</span>
+        </div>
+
+        <div class="webcam-viewport">
+          <video id="webcam" autoplay playsinline width="320" height="240"></video>
+          <div class="webcam-scanline"></div>
+          <div class="webcam-corner tl"></div>
+          <div class="webcam-corner tr"></div>
+          <div class="webcam-corner bl"></div>
+          <div class="webcam-corner br"></div>
+          <div class="webcam-offline-state" id="webcamOffline">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M371-200h218l-20-80H391l-20 80Z"/>
+              <circle cx="12" cy="10" r="3"/>
+              <path d="M12 2a8 8 0 0 0-8 8c0 5.4 7.4 11.5 7.7 11.8a.5.5 0 0 0 .6 0C12.6 21.5 20 15.4 20 10a8 8 0 0 0-8-8z"/>
+            </svg>
+            <span>Camera Off</span>
+          </div>
+        </div>
+
+        <!-- Controls row -->
+        <div class="webcam-controls">
+          <button id="startBtn" class="webcam-btn start-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Start
+          </button>
+          <button id="stopBtn" class="webcam-btn stop-btn" disabled>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+            Stop
+          </button>
+
+          <div class="fps-control">
+            <label for="fpsSelect">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              FPS
+            </label>
+            <select id="fpsSelect" class="fps-select">
+              <option value="1">1</option>
+              <option value="0.5">0.5</option>
+              <option value="2">2</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Connection status -->
+      <div class="connection-status-card">
+        <div class="conn-row">
+          <span class="conn-label">Socket</span>
+          <span class="conn-value" id="socketStatus">
+            <span class="conn-dot disconnected"></span> Disconnected
+          </span>
+        </div>
+        <div class="conn-row">
+          <span class="conn-label">Frames sent</span>
+          <span class="conn-value" id="frameCount">0</span>
+        </div>
+        <div class="conn-row">
+          <span class="conn-label">Last update</span>
+          <span class="conn-value" id="lastUpdate">—</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right col: live results -->
+    <div id="liveResults" class="realtime-right">
+
+      <div class="results-panel-header">
+        <h3>
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          Live Results
+        </h3>
+        <button class="clear-history-btn" id="clearHistoryBtn">Clear</button>
+      </div>
+
+      <!-- Current frame info -->
+      <div class="frame-info-card" id="frameInfo">
+        <div class="frame-info-empty">
+          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+          <span>No frames yet. Start the camera to begin analysis.</span>
+        </div>
+      </div>
+
+      <!-- History feed -->
+      <div class="history-feed-wrapper">
+        <div class="history-feed-label">Frame History</div>
+        <ul id="history" class="history-feed"></ul>
+      </div>
+
+    </div>
+
   </div>
+  <!-- ===== /REALTIME GRID ===== -->
+
 </div>
 
 <!-- Load Socket.IO client from CDN -->
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 
+<!-- ===== ALL ORIGINAL LOGIC — UNTOUCHED ===== -->
 <script>
 document.addEventListener("DOMContentLoaded", () => {
   const startBtn = document.getElementById("startBtn");
@@ -110,5 +215,64 @@ document.addEventListener("DOMContentLoaded", () => {
   stopBtn.addEventListener("click", stopCamera);
 });
 </script>
-</div>
+<!-- ===== /ORIGINAL LOGIC ===== -->
+
+<!-- UI-only enhancements script -->
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const startBtn      = document.getElementById("startBtn");
+  const stopBtn       = document.getElementById("stopBtn");
+  const liveBadge     = document.getElementById("liveBadge");
+  const fpsDisplay    = document.getElementById("fpsDisplay");
+  const fpsSelect     = document.getElementById("fpsSelect");
+  const socketStatus  = document.getElementById("socketStatus");
+  const frameCountEl  = document.getElementById("frameCount");
+  const lastUpdateEl  = document.getElementById("lastUpdate");
+  const webcamOffline = document.getElementById("webcamOffline");
+  const clearHistBtn  = document.getElementById("clearHistoryBtn");
+  const historyEl     = document.getElementById("history");
+
+  let frameCount = 0;
+
+  // Live badge toggle
+  startBtn.addEventListener("click", () => {
+    liveBadge.innerHTML = '<span class="live-dot"></span> LIVE';
+    liveBadge.classList.add("is-live");
+    webcamOffline.style.display = "none";
+    fpsDisplay.textContent = fpsSelect.value + " fps";
+    socketStatus.innerHTML = '<span class="conn-dot connected"></span> Connected';
+  });
+
+  stopBtn.addEventListener("click", () => {
+    liveBadge.innerHTML = '<span class="live-dot"></span> IDLE';
+    liveBadge.classList.remove("is-live");
+    webcamOffline.style.display = "flex";
+    socketStatus.innerHTML = '<span class="conn-dot disconnected"></span> Disconnected';
+  });
+
+  // FPS display update
+  fpsSelect.addEventListener("change", () => {
+    fpsDisplay.textContent = fpsSelect.value + " fps";
+  });
+
+  // Frame counter + last update time (reads from history mutations — no logic interference)
+  const histObserver = new MutationObserver(() => {
+    frameCount++;
+    frameCountEl.textContent = frameCount;
+    lastUpdateEl.textContent = new Date().toLocaleTimeString();
+  });
+  histObserver.observe(historyEl, { childList: true });
+
+  // Clear history button
+  if (clearHistBtn) {
+    clearHistBtn.addEventListener("click", () => {
+      historyEl.innerHTML = '';
+      frameCount = 0;
+      frameCountEl.textContent = '0';
+      lastUpdateEl.textContent = '—';
+    });
+  }
+});
+</script>
+
 {% endblock %}

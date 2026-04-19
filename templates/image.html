@@ -1,80 +1,269 @@
 {% extends "base.html" %}
 {% block content %}
 
-
 <div class="page-content image-page">
-<h1>Image Sentiment Analyzer</h1>
 
-<form id="imageForm" enctype="multipart/form-data">
-  <label>Select image:</label>
-  <input type="file" id="imageFile" name="file" accept="image/*" required />
-  <div class="form-row">
-    <button type="submit">Analyze</button>
+  <!-- ===== PAGE HEADER ===== -->
+  <div class="page-header">
+    <div class="page-header-icon">
+      <svg xmlns="http://www.w3.org/2000/svg" height="28px" viewBox="0 -960 960 960" width="28px" fill="currentColor">
+        <path d="M200-120q-33 0-56.5-23.5T120-200v-560q0-33 23.5-56.5T200-840h560q33 0 56.5 23.5T840-760v560q0 33-23.5 56.5T760-120H200Zm0-80h560v-560H200v560Zm40-80h480L570-480 450-320l-90-120-120 160Zm-40 80v-560 560Z"/>
+      </svg>
+    </div>
+    <div class="page-header-text">
+      <div class="page-eyebrow">
+        <span class="eyebrow-dot"></span> Vision Engine
+      </div>
+      <h1>Image Sentiment Analyzer</h1>
+      <p class="page-subtitle">Upload an image and Cognisense will decode the emotions and sentiment captured within it.</p>
+    </div>
   </div>
-</form>
+  <!-- ===== /PAGE HEADER ===== -->
 
-<section id="result">
-  <!-- results go here -->
-</section>
 
-<script>
-document.addEventListener("DOMContentLoaded", () => {
-  const imageForm = document.getElementById("imageForm");
-  const fileInput = document.getElementById("imageFile");
-  const resultBox = document.getElementById("result");
+  <!-- ===== ANALYZER PANEL ===== -->
+  <div class="analyzer-panel">
 
-  imageForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
+    <!-- Left: Input -->
+    <div class="analyzer-input-col">
 
-    if (!fileInput.files.length) {
-      alert("Please select an image file.");
-      return;
-    }
+      <form id="imageForm" enctype="multipart/form-data">
 
-    let formData = new FormData();
-    formData.append("file", fileInput.files[0]);
+        <div class="input-block">
+          <label class="input-label">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            Select image
+          </label>
 
-    resultBox.innerHTML = "<p>Analyzing image...</p>";
+          <!-- Drop zone -->
+          <label class="file-drop-zone image-drop-zone" id="imageDropZone" for="imageFile">
+            <div class="image-drop-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <polyline points="21 15 16 10 5 21"/>
+              </svg>
+            </div>
+            <div class="file-drop-text">
+              <span class="file-drop-primary">Click to browse or drag & drop</span>
+              <span class="file-drop-secondary">Supports JPG, PNG, WEBP, GIF, BMP</span>
+            </div>
+            <input type="file" id="imageFile" name="file" accept="image/*" required style="display:none;">
+          </label>
 
-    try {
-      const resp = await fetch("/api/analyze/image", {
-        method: "POST",
-        body: formData
-      });
+          <!-- Image preview (shown after selection) -->
+          <div class="image-preview-display" id="imagePreviewDisplay" style="display:none;">
+            <div class="image-preview-wrapper">
+              <img id="imagePreview" class="image-preview-thumb" src="" alt="Preview" />
+              <div class="image-preview-overlay">
+                <button type="button" class="file-clear-btn image-clear-btn" id="imageClearBtn">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  Remove
+                </button>
+              </div>
+            </div>
+            <div class="image-file-meta">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+              <span id="imageFileName"></span>
+              <span id="imageFileSize" class="audio-filesize-text"></span>
+              <span id="imageDimensions" class="audio-filesize-text"></span>
+            </div>
+          </div>
+        </div>
 
-      if (!resp.ok) throw new Error("Server error: " + resp.statusText);
+        <!-- Submit -->
+        <div class="form-row">
+          <button type="submit" class="analyze-btn">
+            <span class="analyze-btn-text">Analyze Image</span>
+            <span class="analyze-btn-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </span>
+            <span class="analyze-btn-loader" style="display:none;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+            </span>
+          </button>
+        </div>
 
-      const data = await resp.json();
-      let out = "<h3>Analysis Results</h3>";
+      </form>
+    </div>
 
-      if (data.error) {
-        out += `<p style="color:red;"><b>Error:</b> ${data.error}</p>`;
-      } else {
-        if (data.overall) {
-          out += `<p><b>Overall:</b> ${data.overall.label} — score ${data.overall.score}</p>`;
-        }
+    <!-- Right: Info panel -->
+    <div class="analyzer-info-col">
+      <div class="info-panel">
+        <div class="info-panel-header">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+          How it works
+        </div>
+        <ul class="info-panel-steps">
+          <li>
+            <span class="step-num">01</span>
+            <div>
+              <strong>Upload</strong>
+              <p>Select any image file containing faces, scenes, or expressive content.</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-num">02</span>
+            <div>
+              <strong>Visual Analysis</strong>
+              <p>Computer vision models scan facial landmarks, expressions, and visual context.</p>
+            </div>
+          </li>
+          <li>
+            <span class="step-num">03</span>
+            <div>
+              <strong>Results</strong>
+              <p>Receive emotion scores, overall sentiment, and AI-generated reasoning.</p>
+            </div>
+          </li>
+        </ul>
+        <div class="info-panel-tip">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          Tip: Images with clear, front-facing expressions yield the most accurate emotion scores.
+        </div>
+        <div class="supported-formats">
+          <span class="format-label">Supported:</span>
+          <span class="format-pill">JPG</span>
+          <span class="format-pill">PNG</span>
+          <span class="format-pill">WEBP</span>
+          <span class="format-pill">GIF</span>
+          <span class="format-pill">BMP</span>
+        </div>
+      </div>
+    </div>
 
-        if (data.emotions) {
-          out += "<h4>All emotions:</h4><ul>";
-          for (let [emo, val] of Object.entries(data.emotions)) {
-            out += `<li>${emo}: ${val.toFixed(3)}</li>`;
-          }
-          out += "</ul>";
-        }
+  </div>
+  <!-- ===== /ANALYZER PANEL ===== -->
 
-        if (data.ai_reasoning) {
-          out += `<h4>AI Reasoning</h4><p>${data.ai_reasoning}</p>`;
-        }
+
+  <!-- ===== RESULTS SECTION ===== -->
+  <section id="result">
+    <!-- results go here -->
+  </section>
+  <!-- ===== /RESULTS SECTION ===== -->
+
+
+  <!-- ===== ALL ORIGINAL LOGIC — UNTOUCHED ===== -->
+  <script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const imageForm = document.getElementById("imageForm");
+    const fileInput = document.getElementById("imageFile");
+    const resultBox = document.getElementById("result");
+
+    imageForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      if (!fileInput.files.length) {
+        alert("Please select an image file.");
+        return;
       }
 
-      resultBox.innerHTML = out;
+      let formData = new FormData();
+      formData.append("file", fileInput.files[0]);
 
-    } catch (err) {
-      resultBox.innerHTML = `<p style='color:red;'>Request failed: ${err}</p>`;
+      resultBox.innerHTML = "<p>Analyzing image...</p>";
+
+      try {
+        const resp = await fetch("/api/analyze/image", {
+          method: "POST",
+          body: formData
+        });
+
+        if (!resp.ok) throw new Error("Server error: " + resp.statusText);
+
+        const data = await resp.json();
+        let out = "<h3>Analysis Results</h3>";
+
+        if (data.error) {
+          out += `<p style="color:red;"><b>Error:</b> ${data.error}</p>`;
+        } else {
+          if (data.overall) {
+            out += `<p><b>Overall:</b> ${data.overall.label} — score ${data.overall.score}</p>`;
+          }
+
+          if (data.emotions) {
+            out += "<h4>All emotions:</h4><ul>";
+            for (let [emo, val] of Object.entries(data.emotions)) {
+              out += `<li>${emo}: ${val.toFixed(3)}</li>`;
+            }
+            out += "</ul>";
+          }
+
+          if (data.ai_reasoning) {
+            out += `<h4>AI Reasoning</h4><p>${data.ai_reasoning}</p>`;
+          }
+        }
+
+        resultBox.innerHTML = out;
+
+      } catch (err) {
+        resultBox.innerHTML = `<p style='color:red;'>Request failed: ${err}</p>`;
+      }
+    });
+  });
+  </script>
+  <!-- ===== /ORIGINAL LOGIC ===== -->
+
+  <!-- UI-only enhancements script -->
+  <script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const fileInput       = document.getElementById("imageFile");
+    const imageDropZone   = document.getElementById("imageDropZone");
+    const previewDisplay  = document.getElementById("imagePreviewDisplay");
+    const previewImg      = document.getElementById("imagePreview");
+    const imageFileName   = document.getElementById("imageFileName");
+    const imageFileSize   = document.getElementById("imageFileSize");
+    const imageDimensions = document.getElementById("imageDimensions");
+    const imageClearBtn   = document.getElementById("imageClearBtn");
+
+    function formatBytes(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / 1048576).toFixed(1) + ' MB';
+    }
+
+    function showImageFile(file) {
+      const url = URL.createObjectURL(file);
+      previewImg.src = url;
+      imageFileName.textContent = file.name;
+      imageFileSize.textContent = formatBytes(file.size);
+      // Get natural dimensions once loaded
+      previewImg.onload = () => {
+        imageDimensions.textContent = previewImg.naturalWidth + ' × ' + previewImg.naturalHeight + 'px';
+      };
+      previewDisplay.style.display = 'block';
+      imageDropZone.classList.add('has-file');
+    }
+
+    if (fileInput) {
+      fileInput.addEventListener('change', () => {
+        if (fileInput.files.length > 0) showImageFile(fileInput.files[0]);
+      });
+    }
+
+    if (imageClearBtn) {
+      imageClearBtn.addEventListener('click', () => {
+        fileInput.value = '';
+        previewImg.src = '';
+        previewDisplay.style.display = 'none';
+        imageDropZone.classList.remove('has-file');
+      });
+    }
+
+    if (imageDropZone) {
+      imageDropZone.addEventListener('dragover',  (e) => { e.preventDefault(); imageDropZone.classList.add('drag-over'); });
+      imageDropZone.addEventListener('dragleave', () => imageDropZone.classList.remove('drag-over'));
+      imageDropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        imageDropZone.classList.remove('drag-over');
+        if (e.dataTransfer.files.length > 0) {
+          fileInput.files = e.dataTransfer.files;
+          showImageFile(e.dataTransfer.files[0]);
+        }
+      });
     }
   });
-});
-</script>
+  </script>
+
 </div>
 {% endblock %}
-

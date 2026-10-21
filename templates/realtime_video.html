@@ -160,6 +160,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function renderAnalysis(data) {
     if (!data) return;
+    if (!data.error) renderAnalyzerChart(data);
     const ts = new Date().toLocaleTimeString();
     frameInfo.innerHTML = `<b>Last frame:</b> ${ts} — brightness: ${data.brightness ?? "N/A"} — top emotion: ${data.top_emotion ? data.top_emotion.label + " (" + data.top_emotion.score + ")" : "N/A"}`;
     

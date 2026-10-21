@@ -5,3 +5,5 @@ SpeechRecognition>=3.8.1
 pydub>=0.25.1
 numpy>=1.21
 werkzeug>=2.0
+PyPDF2
+docx

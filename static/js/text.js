@@ -27,6 +27,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // ── Form submit (ALL ORIGINAL LOGIC — UNTOUCHED) ─────────────────────
     form.addEventListener("submit", async (e) => {
         e.preventDefault();
+        renderAnalyzerChart(null);
         resultSection.innerHTML = "<p>Analyzing...</p>";
 
         const formData = new FormData();
@@ -37,6 +38,7 @@ document.addEventListener("DOMContentLoaded", () => {
         } else if (textInput.value.trim() !== "") {
             formData.append("text", textInput.value.trim());
         } else {
+            renderAnalyzerChart(null);
             resultSection.innerHTML = "<p style='color:red;'>Please provide text or upload a file.</p>";
             return;
         }
@@ -50,13 +52,16 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = await resp.json();
 
             if (data.error) {
+                renderAnalyzerChart(null);
                 resultSection.innerHTML = `<p style='color:red;'>Error: ${data.error}</p>`;
                 return;
             }
 
             renderResult(data);
+            renderAnalyzerChart(data);
         } catch (err) {
             console.error(err);
+            renderAnalyzerChart(null);
             resultSection.innerHTML = "<p style='color:red;'>An error occurred while analyzing.</p>";
         }
     });

@@ -70,7 +70,7 @@ body.light {
   --accent-glow: rgba(37,99,235,0.25);
   --cyan:        #0891b2;
   --cyan-dim:    rgba(8,145,178,0.1);
-  --sidebar-bg:  #0f1c2e;
+  --sidebar-bg:  #ffffff;
   --shadow-md:   0 8px 32px rgba(0,0,0,0.12);
   --glow-blue:   0 0 24px rgba(37,99,235,0.15);
 }
@@ -106,9 +106,10 @@ body {
 }
 
 h1, h2, h3, h4, h5 {
-  font-family: var(--font-display);
-  font-weight: 700;
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 500;
   line-height:  1.2;
+  letter-spacing: -0.02em;
   color:        var(--text);
 }
 
@@ -133,6 +134,8 @@ ul { list-style: none; }
   transition: margin-left 0.35s var(--ease);
   min-width:  0;
 }
+
+.content.shift { margin-left: var(--sidebar-w); }
 
 
 /* ── 4. TOGGLE BUTTONS ─────────────────────────────────────── */

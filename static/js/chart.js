@@ -2,7 +2,6 @@
 
 // ── Chart registry ────────────────────────────────────────────
 let charts = {};        // named charts by canvasId
-let analysisChart = null; // dedicated emotions chart (base.html #analysisChart)
 
 // ── Theme tokens (mirror CSS variables) ──────────────────────
 function getChartTheme() {
@@ -71,6 +70,22 @@ function generateBorderColors(count) {
   return colors;
 }
 
+function isFiniteChartValue(value) {
+  return (typeof value === "number" || (typeof value === "string" && value.trim() !== "")) &&
+    Number.isFinite(Number(value));
+}
+
+function getSentimentAnalysis(data) {
+  if (data.analysis && typeof data.analysis === "object") return data.analysis;
+  if (data.audio_analysis) {
+    if (data.audio_analysis.error) return {};
+    if (data.audio_analysis.analysis && typeof data.audio_analysis.analysis === "object") {
+      return data.audio_analysis.analysis;
+    }
+  }
+  return data;
+}
+
 // ── Helper: build themed scale options ───────────────────────
 function buildScales(type) {
   if (type !== "bar" && type !== "line") return {};
@@ -101,19 +116,17 @@ function buildScales(type) {
  */
 function renderChart(canvasId, type, labels, data, title = "", colors = null) {
   const canvasEl = document.getElementById(canvasId);
-  if (!canvasEl) return;
+  if (!canvasEl || typeof Chart === "undefined" ||
+      !Array.isArray(labels) || !Array.isArray(data) ||
+      !labels.length || labels.length !== data.length ||
+      !data.every(value => Number.isFinite(value))) {
+    clearChart(canvasId);
+    return false;
+  }
 
   applyChartDefaults();
   const t   = getChartTheme();
-  const ctx = canvasEl.getContext("2d");
-
-  // Destroy old instance
-  if (charts[canvasId]) {
-    charts[canvasId].destroy();
-    delete charts[canvasId];
-  }
-
-  charts[canvasId] = new Chart(ctx, {
+  const config = {
     type: type,
     data: {
       labels: labels,
@@ -146,7 +159,18 @@ function renderChart(canvasId, type, labels, data, title = "", colors = null) {
       },
       scales: buildScales(type)
     }
-  });
+  };
+  const existingChart = charts[canvasId];
+  if (existingChart && existingChart.config.type === type) {
+    existingChart.data.labels = labels;
+    existingChart.data.datasets = config.data.datasets;
+    existingChart.options = config.options;
+    existingChart.update("none");
+  } else {
+    if (existingChart) existingChart.destroy();
+    charts[canvasId] = new Chart(canvasEl.getContext("2d"), config);
+  }
+  return true;
 }
 
 /**
@@ -156,56 +180,138 @@ function renderChart(canvasId, type, labels, data, title = "", colors = null) {
  * @param {object} data - API response containing data.emotions
  */
 function renderEmotionChart(data) {
-  const chartContainer = document.getElementById("chartContainer");
-  const canvasEl       = document.getElementById("analysisChart");
+  const emotions = data && data.emotions && typeof data.emotions === "object"
+    ? Object.entries(data.emotions).filter(([, value]) =>
+        typeof value === "number" && Number.isFinite(value))
+    : [];
+  if (!emotions.length) return false;
+  return renderChart(
+    "analysisChart",
+    "bar",
+    emotions.map(([label]) => label),
+    emotions.map(([, value]) => Number(value.toFixed(3))),
+    "Emotion Distribution"
+  );
+}
 
-  if (!data || !data.emotions || !canvasEl) {
-    if (chartContainer) chartContainer.style.display = "none";
-    return;
+function renderAnalyzerChart(data) {
+  const container = document.getElementById("chartContainer");
+  const detailCanvasId = "analysisDetailChart";
+  const detailCanvas = document.getElementById(detailCanvasId);
+  let rendered = false;
+  let renderedDetail = false;
+
+  const clearDetailChart = () => {
+    clearChart(detailCanvasId);
+    if (detailCanvas) detailCanvas.remove();
+  };
+  const hideCharts = () => {
+    clearChart("analysisChart");
+    clearDetailChart();
+    if (container) container.style.display = "none";
+  };
+
+  if (!data || typeof data !== "object" || typeof Chart === "undefined") {
+    hideCharts();
+    return false;
   }
 
-  chartContainer.style.display = "block";
+  const emotions = data.emotions && typeof data.emotions === "object"
+    ? Object.entries(data.emotions).filter(([, value]) =>
+        typeof value === "number" && Number.isFinite(value))
+    : [];
+  if (emotions.length) {
+    rendered = renderEmotionChart({ emotions: Object.fromEntries(emotions) });
+  } else {
+    const analysis = getSentimentAnalysis(data);
+    const sentimentItems = Array.isArray(analysis.word_level) && analysis.word_level.length
+      ? analysis.word_level
+      : Array.isArray(analysis.sentence_level) ? analysis.sentence_level : [];
+    const counts = { positive: 0, neutral: 0, negative: 0 };
+    sentimentItems.forEach(item => {
+      const label = item && typeof item.label === "string" ? item.label.toLowerCase() : "";
+      if (Object.prototype.hasOwnProperty.call(counts, label)) counts[label]++;
+    });
+    const sentimentCount = Object.values(counts).reduce((sum, value) => sum + value, 0);
 
-  applyChartDefaults();
-  const t      = getChartTheme();
-  const labels = Object.keys(data.emotions);
-  const values = Object.values(data.emotions).map(v => parseFloat(v.toFixed(3)));
-  const ctx    = canvasEl.getContext("2d");
-
-  if (analysisChart) {
-    analysisChart.destroy();
-    analysisChart = null;
-  }
-
-  analysisChart = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels: labels,
-      datasets: [{
-        label:           "Emotion Scores",
-        data:            values,
-        backgroundColor: generateColors(values.length),
-        borderColor:     generateBorderColors(values.length),
-        borderWidth:     1.5,
-        borderRadius:    6
-      }]
-    },
-    options: {
-      responsive: true,
-      animation: { duration: 700, easing: "easeOutQuart" },
-      plugins: {
-        legend: { display: false },
-        title: {
-          display: true,
-          text:    "Emotion Distribution",
-          color:   t.titleColor,
-          font:    { size: 14, weight: "700", family: "'Syne', sans-serif" },
-          padding: { bottom: 16 }
-        }
-      },
-      scales: buildScales("bar")
+    if (sentimentCount) {
+      rendered = renderChart(
+        "analysisChart", "bar",
+        Object.keys(counts), Object.values(counts),
+        "Sentiment Distribution"
+      );
+    } else if (analysis.overall && isFiniteChartValue(analysis.overall.score)) {
+      rendered = renderChart(
+        "analysisChart", "bar",
+        [String(analysis.overall.label || "Overall")],
+        [Number(analysis.overall.score)],
+        "Overall Sentiment Score"
+      );
+    } else {
+      const frames = data.frame_brightness && Array.isArray(data.frame_brightness.frames)
+        ? data.frame_brightness.frames.filter(frame => frame &&
+            isFiniteChartValue(frame.time) && isFiniteChartValue(frame.brightness))
+        : [];
+      if (frames.length) {
+        rendered = renderChart(
+          "analysisChart", "line",
+          frames.map(frame => `${Number(frame.time).toFixed(1)}s`),
+          frames.map(frame => Number(frame.brightness)),
+          "Video Frame Brightness"
+        );
+      } else if (isFiniteChartValue(data.brightness)) {
+        rendered = renderChart(
+          "analysisChart", "bar", ["Brightness"], [Number(data.brightness)],
+          "Current Frame Brightness"
+        );
+      }
     }
-  });
+  }
+
+  const videoFrames = data.frame_brightness && Array.isArray(data.frame_brightness.frames)
+    ? data.frame_brightness.frames.filter(frame => frame &&
+        isFiniteChartValue(frame.time) && isFiniteChartValue(frame.brightness))
+    : [];
+  if (videoFrames.length && emotions.length === 0) {
+    const primaryAnalysis = getSentimentAnalysis(data);
+    const hasSentiment = (Array.isArray(primaryAnalysis.word_level) &&
+        primaryAnalysis.word_level.some(item => item && countsLabel(item.label))) ||
+      (Array.isArray(primaryAnalysis.sentence_level) &&
+      primaryAnalysis.sentence_level.some(item => item && countsLabel(item.label))) ||
+    (primaryAnalysis.overall && countsLabel(primaryAnalysis.overall.label) &&
+      isFiniteChartValue(primaryAnalysis.overall.score));
+    if (hasSentiment) {
+      let canvas = document.getElementById(detailCanvasId);
+      if (!canvas && container) {
+        canvas = document.createElement("canvas");
+        canvas.id = detailCanvasId;
+        canvas.setAttribute("aria-label", "Video frame brightness chart");
+        container.appendChild(canvas);
+      }
+      if (canvas) {
+        renderedDetail = renderChart(
+          detailCanvasId, "line",
+          videoFrames.map(frame => `${Number(frame.time).toFixed(1)}s`),
+          videoFrames.map(frame => Number(frame.brightness)),
+          "Video Frame Brightness"
+        );
+        rendered = renderedDetail || rendered;
+      }
+    }
+  }
+
+  if (!rendered) {
+    hideCharts();
+    return false;
+  }
+  if (container) container.style.display = "block";
+  if (!renderedDetail) clearDetailChart();
+  return true;
+}
+
+function countsLabel(label) {
+  return typeof label === "string" &&
+    ["positive", "neutral", "negative"].includes(label.toLowerCase());
 }
 
 /**
@@ -239,16 +345,6 @@ if (modeToggleBtn) {
           chart.update("none");
         }
       });
-      // Also update the emotions chart if active
-      if (analysisChart) {
-        const t = getChartTheme();
-        analysisChart.options.plugins.title.color        = t.titleColor;
-        analysisChart.options.scales.x.ticks.color       = t.textColor;
-        analysisChart.options.scales.x.grid.color        = t.gridColor;
-        analysisChart.options.scales.y.ticks.color       = t.textColor;
-        analysisChart.options.scales.y.grid.color        = t.gridColor;
-        analysisChart.update("none");
-      }
     }, 50);
   });
 }

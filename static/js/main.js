@@ -4,7 +4,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const darkToggle    = document.getElementById("modeToggle");
   const sidebar       = document.getElementById("sidebar");
   const sidebarToggle = document.getElementById("sidebarToggle");
-  const main          = document.getElementById("main") || document.querySelector(".page-content");
+  const main          = document.getElementById("main") || document.getElementById("content") || document.querySelector(".page-content");
 
   // ── Learn More (homepage only) ──────────────────────────────
   const learnMoreBtn    = document.getElementById('learnMoreBtn');
@@ -71,11 +71,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ── Text form ───────────────────────────────────────────────
   const textForm = document.getElementById("textForm");
-  if (textForm) {
+  if (textForm && !document.getElementById("fileInput")) {
     textForm.addEventListener("submit", async (ev) => {
       ev.preventDefault();
       const text   = document.getElementById("textInput").value;
       const resBox = document.getElementById("result");
+      renderAnalyzerChart(null);
       resBox.innerHTML = "<p>Analyzing text…</p>";
       const form = new URLSearchParams();
       form.append("text", text);
@@ -86,9 +87,15 @@ document.addEventListener("DOMContentLoaded", () => {
           body: form.toString()
         });
         const data = await resp.json();
-        if (data.error) resBox.innerHTML = "<b>Error:</b> " + data.error;
-        else resBox.innerHTML = renderAnalysis(data);
+        if (data.error) {
+          renderAnalyzerChart(null);
+          resBox.innerHTML = "<b>Error:</b> " + data.error;
+        } else {
+          resBox.innerHTML = renderAnalysis(data);
+          renderAnalyzerChart(data);
+        }
       } catch (e) {
+        renderAnalyzerChart(null);
         resBox.innerHTML = "Request failed: " + e.message;
       }
     });
@@ -101,6 +108,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ev.preventDefault();
       const fileInput = document.getElementById("audioFile");
       const resBox    = document.getElementById("result");
+      renderAnalyzerChart(null);
       if (!fileInput.files.length) { resBox.innerHTML = "Select a file."; return; }
       resBox.innerHTML = "Uploading and analyzing audio…";
       const fd = new FormData();
@@ -108,9 +116,15 @@ document.addEventListener("DOMContentLoaded", () => {
       try {
         const resp = await fetch("/api/analyze/audio", { method: "POST", body: fd });
         const data = await resp.json();
-        if (data.error) resBox.innerHTML = "<b>Error:</b> " + data.error;
-        else resBox.innerHTML = renderAudioAnalysis(data);
+        if (!resp.ok || data.error) {
+          renderAnalyzerChart(null);
+          resBox.innerHTML = "<b>Error:</b> " + (data.error || `Request failed (${resp.status}).`);
+        } else {
+          resBox.innerHTML = renderAudioAnalysis(data);
+          renderAnalyzerChart(data);
+        }
       } catch (e) {
+        renderAnalyzerChart(null);
         resBox.innerHTML = "Request failed: " + e.message;
       }
     });
@@ -123,6 +137,7 @@ document.addEventListener("DOMContentLoaded", () => {
       ev.preventDefault();
       const fileInput = document.getElementById("videoFile");
       const resBox    = document.getElementById("result");
+      renderAnalyzerChart(null);
       if (!fileInput.files.length) { resBox.innerHTML = "Select a file."; return; }
       resBox.innerHTML = "Uploading and analyzing video (may take longer)…";
       const fd = new FormData();
@@ -130,9 +145,15 @@ document.addEventListener("DOMContentLoaded", () => {
       try {
         const resp = await fetch("/api/analyze/video", { method: "POST", body: fd });
         const data = await resp.json();
-        if (data.error) resBox.innerHTML = "<b>Error:</b> " + data.error;
-        else resBox.innerHTML = renderVideoAnalysis(data);
+        if (!resp.ok || data.error) {
+          renderAnalyzerChart(null);
+          resBox.innerHTML = "<b>Error:</b> " + (data.error || `Request failed (${resp.status}).`);
+        } else {
+          resBox.innerHTML = renderVideoAnalysis(data);
+          renderAnalyzerChart(data);
+        }
       } catch (e) {
+        renderAnalyzerChart(null);
         resBox.innerHTML = "Request failed: " + e.message;
       }
     });

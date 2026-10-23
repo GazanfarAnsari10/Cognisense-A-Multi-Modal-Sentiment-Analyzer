@@ -1,4 +1,8 @@
 Flask>=2.0
+flask-socketio
+fastapi>=0.110
+uvicorn[standard]>=0.27
+python-multipart>=0.0.9
 nltk>=3.6
 moviepy>=1.0.3
 SpeechRecognition>=3.8.1
@@ -6,4 +10,6 @@ pydub>=0.25.1
 numpy>=1.21
 werkzeug>=2.0
 PyPDF2
-docx
+python-docx>=0.8.11
+opencv-python
+fer

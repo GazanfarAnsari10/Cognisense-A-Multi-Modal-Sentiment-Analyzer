@@ -1,6 +1,6 @@
 # analyzers/image_analyzer.py
 import cv2
-from fer import FER
+from fer.fer import FER
 
 def analyze_image_file(path):
     try:

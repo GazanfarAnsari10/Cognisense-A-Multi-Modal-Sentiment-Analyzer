@@ -129,42 +129,10 @@ B.E– Artificial Intelligence & Machine Learning
 <a href="https://www.linkedin.com/in/mohammad-gazanfar-ansari" target="_blank">
 LinkedIn</a>
 &nbsp; | &nbsp;
-<a href="mailto:gazi.freestyle@gmail.com">
+<a href="mailto:mohammadgazanfaransari@gmail.com">
 Email</a>
 </p>
 
-
-<p>
-<b>Sachin Chandraprakash Kanojiya</b><br>
-B.E– Artificial Intelligence & Machine Learning
-<br>
-<a href="https://www.linkedin.com/in/sachin-kanojiya-5b8234372/" target="_blank">
-LinkedIn</a>
-&nbsp; | &nbsp;
-<a href="mailto:Sachinkanojiya647@gmail.com">
-Email</a>
-</p>
-
-<p>
-<b>Suyash vivek ketkar </b><br>
-B.E– Artificial Intelligence & Machine Learning
-<br>
-<a href="https://www.linkedin.com/in/suyashketkar/" target="_blank">
-LinkedIn</a>
-&nbsp; | &nbsp;
-<a href="mailto:suyashketkar@gmail.com">
-Email</a>
-
-<p>
-<b>Chhaya Achhelal Rajbhar </b><br>
-B.E– Artificial Intelligence & Machine Learning
-<br>
-<a href="https://www.linkedin.com/in/chhaya-rajbhar-663656349/" target="_blank">
-LinkedIn</a>
-&nbsp; | &nbsp;
-<a href="mailto:chhayarajbhar34@gmail.com">
-Email</a>
-</p>
 <!-- 
 <hr> -->
 

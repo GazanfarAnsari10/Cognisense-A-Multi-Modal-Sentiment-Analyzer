@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cognisense Feedback Widget Demo</title>
+
+  <link rel="stylesheet" href="./sdk/cognisense-widget.css">
+
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, sans-serif;
+      background: #f3f5f9;
+      color: #1f2937;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      box-sizing: border-box;
+    }
+
+    .demo-container {
+      width: 100%;
+      max-width: 600px;
+    }
+
+    .demo-header {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+
+    .demo-header h1 {
+      margin-bottom: 8px;
+      color: #172554;
+    }
+
+    .demo-header p {
+      color: #64748b;
+      line-height: 1.6;
+    }
+
+    #customer-feedback {
+      background: white;
+      padding: 24px;
+      border-radius: 14px;
+      box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08);
+    }
+
+    .notice {
+      margin-top: 20px;
+      font-size: 13px;
+      color: #64748b;
+      text-align: center;
+    }
+  </style>
+</head>
+
+<body>
+  <main class="demo-container">
+    <header class="demo-header">
+      <h1>Cognisense</h1>
+      <p>Feedback Widget Demo</p>
+      <p>Share your experience and let Cognisense analyze your feedback.</p>
+    </header>
+
+    <section id="customer-feedback"></section>
+
+    <p class="notice">
+      Demo environment · Feedback is processed through the Cognisense API.
+    </p>
+  </main>
+
+  <script type="module">
+    import { mountCognisenseWidget }
+      from "./sdk/cognisense-widget.mjs";
+
+    mountCognisenseWidget({
+      target: "#customer-feedback",
+      endpoint: "/api/cognisense-feedback",
+      title: "Your Feedback",
+      prompt: "How was your experience?",
+      placeholder: "Tell us what you think...",
+      submitLabel: "Analyze Feedback",
+      successMessage: "Feedback analyzed successfully!",
+      errorMessage: "Unable to analyze feedback. Please try again."
+    });
+  </script>
+</body>
+</html>

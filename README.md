@@ -205,7 +205,7 @@ uvicorn api_gateway:app --host 0.0.0.0 --port 8000
 ### Endpoints
 
 - `GET /api/v1/health` — public health check.
-- `POST /api/v1/analyze` — authenticated analysis. Supply `X-API-Key` and the matching `project_id`.
+- `POST /api/v1/analyze` — authenticated analysis. Supply `X-API-Key` and the matching `project_id`. Add `?export_format=json`, `?export_format=csv`, or `?export_format=pdf` to download the newly generated results instead of the regular JSON response.
 - `GET /docs` — interactive OpenAPI documentation.
 
 Send plain text as JSON:
@@ -215,6 +215,16 @@ curl.exe https://api.example.com/api/v1/analyze `
   -H "X-API-Key: YOUR_PROJECT_API_KEY" `
   -H "Content-Type: application/json" `
   -d '{ "project_id": "my-project", "text": "The support team was very helpful." }'
+```
+
+Download the same authenticated text analysis as a PDF (use `json` or `csv` for the other export formats):
+
+```powershell
+curl.exe "https://api.example.com/api/v1/analyze?export_format=pdf" `
+  -H "X-API-Key: YOUR_PROJECT_API_KEY" `
+  -H "Content-Type: application/json" `
+  -d '{ "project_id": "my-project", "text": "The support team was very helpful." }' `
+  -o feedback-report.pdf
 ```
 
 Send multiple modalities as multipart form data; repeat the `files` field for additional files:
@@ -227,6 +237,8 @@ curl.exe https://api.example.com/api/v1/analyze `
   -F "files=@feedback.txt" `
   -F "files=@meeting.wav"
 ```
+
+Add `?export_format=csv` or `?export_format=json` to that multipart URL to download an export for those inputs. Exports are generated from the analyzer results within the authenticated request, so clients cannot request another project's report by submitting a result or request ID. Export responses include a download filename and their corresponding JSON, CSV, or PDF content type. JSON and CSV include chart-ready sentiment, word, sentence, emotion, and video-frame series where the analyzers provide those values. PDF reports include sentiment/emotion/frame visualizations when available, plus per-input labels, scores, summaries, reasoning, and modality-specific details. Missing chart data is omitted rather than treated as an error; CSV retains the original result JSON in its rows.
 
 Multipart uploads are limited to five files. The gateway accepts TXT/PDF, WAV/MP3/M4A/OGG/FLAC/AIFF audio, MP4/MOV/AVI/MKV/WEBM video, and JPG/JPEG/PNG/WEBP images. Actual codec support depends on the installed MoviePy/FFmpeg and audio dependencies. Documents are sent to the existing text analyzer after extraction; other files are sent to their existing modality analyzer.
 

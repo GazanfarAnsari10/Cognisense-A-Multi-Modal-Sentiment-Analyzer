@@ -49,6 +49,14 @@ class FeedbackGatewayTests(unittest.TestCase):
         self.assertIn("application/json", operation["requestBody"]["content"])
         self.assertIn("multipart/form-data", operation["requestBody"]["content"])
         self.assertEqual(operation["security"], [{"APIKeyHeader": []}])
+        parameters = operation["parameters"]
+        self.assertTrue(
+            any(
+                parameter["name"] == "export_format"
+                and parameter["schema"]["enum"] == ["json", "csv", "pdf"]
+                for parameter in parameters
+            )
+        )
 
     def test_json_text_is_authenticated_and_standardized(self):
         response = self.client.post(
@@ -64,6 +72,66 @@ class FeedbackGatewayTests(unittest.TestCase):
         self.assertEqual(payload["data"]["status"], "complete")
         self.assertEqual(payload["data"]["results"][0]["modality"], "text")
         self.assertEqual(self.mock_analyzer.call_args.args[0], "text")
+
+    def test_json_export_returns_download_only_for_authenticated_analysis(self):
+        response = self.client.post(
+            "/api/v1/analyze?export_format=json",
+            headers={"X-API-Key": "replace-with-a-long-random-secret"},
+            json={"project_id": "example-project", "text": "Great service"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-type"], "application/json")
+        self.assertIn("attachment;", response.headers["content-disposition"])
+        self.assertTrue(response.headers["content-disposition"].endswith('.json"'))
+        payload = response.json()
+        self.assertEqual(payload["project_id"], "example-project")
+        self.assertEqual(payload["data"]["results"][0]["result"]["analyzed"], "text")
+
+    def test_pdf_export_returns_downloadable_pdf(self):
+        response = self.client.post(
+            "/api/v1/analyze?export_format=pdf",
+            headers={"X-API-Key": "replace-with-a-long-random-secret"},
+            json={"project_id": "example-project", "text": "Great service"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-type"], "application/pdf")
+        self.assertIn("attachment;", response.headers["content-disposition"])
+        self.assertTrue(response.content.startswith(b"%PDF-"))
+
+    def test_csv_export_returns_downloadable_chart_data(self):
+        response = self.client.post(
+            "/api/v1/analyze?export_format=csv",
+            headers={"X-API-Key": "replace-with-a-long-random-secret"},
+            json={"project_id": "example-project", "text": "Great service"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.headers["content-type"].startswith("text/csv"))
+        self.assertIn("attachment;", response.headers["content-disposition"])
+        self.assertIn(b"chart_type", response.content)
+
+    def test_unsupported_export_format_is_rejected(self):
+        response = self.client.post(
+            "/api/v1/analyze?export_format=xml",
+            headers={"X-API-Key": "replace-with-a-long-random-secret"},
+            json={"project_id": "example-project", "text": "Great service"},
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["error"]["code"], "validation_error")
+        self.mock_analyzer.assert_not_called()
+
+    def test_export_requires_valid_project_authentication(self):
+        response = self.client.post(
+            "/api/v1/analyze?export_format=json",
+            json={"project_id": "example-project", "text": "Great service"},
+        )
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["error"]["code"], "unauthorized")
+        self.mock_analyzer.assert_not_called()
 
     def test_multipart_routes_text_and_supported_file(self):
         response = self.client.post(

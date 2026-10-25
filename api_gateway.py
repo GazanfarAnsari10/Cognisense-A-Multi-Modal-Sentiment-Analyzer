@@ -9,19 +9,21 @@ import os
 import re
 import tempfile
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.security import APIKeyHeader
 from starlette.datastructures import UploadFile
 from starlette.middleware.cors import CORSMiddleware
 from werkzeug.utils import secure_filename
 
 from utils import extract_text_from_pdf
+from result_export import build_export
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -330,7 +332,17 @@ async def health(request: Request) -> dict[str, Any]:
 async def analyze_feedback(
     request: Request,
     authenticated_project: str = Depends(authenticate_project),
-) -> JSONResponse:
+    export_format: str | None = Query(
+        default=None,
+        description="Optionally download the analyzer results as json, csv, or pdf.",
+        json_schema_extra={"enum": ["json", "csv", "pdf"]},
+    ),
+) -> Response:
+    if export_format is not None and export_format not in {"json", "csv", "pdf"}:
+        raise HTTPException(
+            status_code=422,
+            detail="export_format must be one of: json, csv, pdf.",
+        )
     content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if content_type == "application/json":
         try:
@@ -414,6 +426,20 @@ async def analyze_feedback(
     failed = any("error" in result for result in results)
     if failed and all("error" in result for result in results):
         return _error_response(request.state.request_id, 500, "analysis_failed", "All analyzers failed.")
+    if export_format is not None:
+        body, media_type, extension = build_export(
+            export_format=export_format,
+            project_id=project_id,
+            request_id=request.state.request_id,
+            results=results,
+            analysis_timestamp=datetime.now(timezone.utc).isoformat(),
+        )
+        filename = f"cognisense-export-{uuid.uuid4().hex}.{extension}"
+        return Response(
+            content=body,
+            media_type=media_type,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
     return JSONResponse(
         content={
             "success": True,

@@ -204,7 +204,30 @@ No schema migration is required: the existing `projects` table already provides 
 python -m unittest tests.test_projects -v
 ```
 
-Project management does not create or verify API keys, change gateway authentication, enforce quotas, or provide project UI.
+Phase 6C project management itself does not create or verify API keys, change gateway authentication, enforce quotas, or provide project UI.
+
+## Phase 6D secure API key management
+
+Authenticated project owners can manage multiple API keys using the existing `api_keys` schema. Project IDs in these routes are the public project IDs returned by the project API. A project must be active; key operations on archived projects return `409`. Projects and keys that are missing or belong to another user return the same `404` response as inaccessible resources.
+
+- `POST /api/v1/projects/<project_id>/keys` — create a key, optionally with JSON `{ "expires_in_days": 30 }`. Omit the field for a key without an expiry. Valid expiry values are integers from 1 through 365 days. The successful `201` response contains safe metadata and the complete secret in `data.secret` exactly once.
+- `GET /api/v1/projects/<project_id>/keys` — list safe metadata for the project's keys.
+- `GET /api/v1/projects/<project_id>/keys/<key_id>` — retrieve safe metadata for one key.
+- `POST /api/v1/projects/<project_id>/keys/<key_id>/revoke` — permanently revoke a key. Repeating the request is safe and does not reactivate or otherwise change the key.
+
+All routes require the authenticated `cognisense_session` cookie. For the create and revoke POST requests, first obtain a CSRF token from `GET /api/v1/auth/csrf`, send the matching `cognisense_csrf` cookie, and include the same token in the `X-CSRF-Token` header. A server-side client sends these as a `Cookie` header and an `X-CSRF-Token` header; browsers send the cookies automatically when configured for the API origin. The API returns JSON errors with stable `code` and `message` fields.
+
+Keys use the recognizable `cgs_live_` prefix. The returned metadata includes the key ID, non-secret prefix, creation time, expiry, last-used time, status, and revocation time/status; list and detail responses never include the secret or stored hash. The full key is generated from cryptographically secure randomness and is returned only after the database transaction has committed. Only a SHA-256 digest of the complete high-entropy key is stored. SHA-256 is suitable here because keys contain 256 bits of random secret entropy; Phase 6E verification should locate the record using its public prefix, hash the presented complete key, and compare the digest in constant time. This phase does not make these keys authorize gateway analysis requests.
+
+The default maximum is 10 active keys per project. Set `COGNISENSE_MAX_ACTIVE_KEYS_PER_PROJECT` to a positive integer to change it. Creation serializes on the owned project row in PostgreSQL so concurrent creates cannot exceed the configured active-key limit. Expired and revoked keys do not count toward the active limit. Expiry is optional and capped at 365 days.
+
+API consumers should store the secret in a server-side secret manager, restrict access to the smallest set of services possible, use HTTPS, and rotate or revoke exposed keys promptly. **Never put API keys in frontend JavaScript, HTML, browser storage, or public build variables, and never commit keys to source control.** The key is shown once; if it is lost, revoke it and create a replacement.
+
+Run isolated key-management tests with:
+
+```powershell
+python -m unittest tests.test_api_keys -v
+```
 
 ## Phase 6A database foundation
 

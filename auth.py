@@ -359,6 +359,25 @@ def _find_current_session(session: Session, settings: dict[str, Any]) -> AuthSes
     return auth_session
 
 
+def get_authenticated_session(session: Session, settings: dict[str, Any]) -> AuthSession | None:
+    auth_session = _find_current_session(session, settings)
+    if auth_session is None or auth_session.user.status != "active":
+        return None
+    return auth_session
+
+
+def validate_session_csrf(
+    auth_session: AuthSession,
+    secret: str,
+    settings: dict[str, Any],
+) -> bool:
+    cookie_token = request.cookies.get(settings["csrf_cookie"], "")
+    return (
+        _csrf_is_valid(secret, settings)
+        and hmac.compare_digest(auth_session.csrf_token_hash, _csrf_hash(cookie_token))
+    )
+
+
 @auth_blueprint.get("/me")
 def me():
     secret = _auth_secret()
@@ -367,8 +386,8 @@ def me():
     try:
         settings = _settings()
         with _session_factory()() as session:
-            auth_session = _find_current_session(session, settings)
-            if auth_session is None or auth_session.user.status != "active":
+            auth_session = get_authenticated_session(session, settings)
+            if auth_session is None:
                 return jsonify(error={"code": "unauthorized", "message": "Authentication is required."}), 401
             response = make_response(jsonify(success=True, data={"user": _user_response(auth_session.user)}))
     except SQLAlchemyError:
@@ -393,13 +412,7 @@ def logout():
             auth_session = _find_current_session(session, settings)
             if auth_session is None:
                 response = make_response(jsonify(error={"code": "unauthorized", "message": "Authentication is required."}), 401)
-            elif (
-                not _csrf_is_valid(secret, settings)
-                or not hmac.compare_digest(
-                    auth_session.csrf_token_hash,
-                    _csrf_hash(request.cookies.get(settings["csrf_cookie"], "")),
-                )
-            ):
+            elif not validate_session_csrf(auth_session, secret, settings):
                 return jsonify(error={"code": "csrf_failed", "message": "A valid CSRF token is required."}), 403
             else:
                 auth_session.revoked_at = datetime.now(timezone.utc)

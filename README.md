@@ -186,6 +186,26 @@ python -m unittest tests.test_auth -v
 
 These auth tests use a dedicated in-memory SQLite database instance created only by the test suite; application configuration still requires PostgreSQL and never falls back to SQLite. Production deployment must use HTTPS, retain the secret and database URL in a secret manager, review trusted reverse-proxy handling for client addresses, and periodically clean up expired/revoked session and login-attempt rows. Configure PostgreSQL availability, backups, monitoring, and pool limits for the deployment. The migration leaves `password_hash` nullable so pre-existing user rows are preserved; those accounts cannot log in until a separately secured credential-enrollment process is provided. Email verification, password reset, and account recovery are deferred because no email-delivery/token-lifecycle service is configured. This phase is not a complete production account-security system until those recovery/verification requirements and deployment controls have been reviewed.
 
+## Phase 6C project management
+
+The authenticated Flask platform exposes project endpoints at `/api/v1/projects`. Each project is owned by the user resolved from the server-side Phase 6B session; owner IDs and public project IDs cannot be supplied or changed by the caller. Public project IDs are random UUIDv4 identifiers. Project names are trimmed, required, and limited to 100 characters. Each user may have up to 20 active projects by default; configure `COGNISENSE_MAX_PROJECTS_PER_USER` to change this limit.
+
+- `POST /api/v1/projects` — create with JSON `{ "name": "Customer Feedback" }`. Returns `201`.
+- `GET /api/v1/projects` — list the current user's projects, including archived projects.
+- `GET /api/v1/projects/<project_id>` — retrieve a project the current user owns.
+- `PATCH /api/v1/projects/<project_id>` — rename with JSON `{ "name": "New Name" }`. Other fields are rejected.
+- `DELETE /api/v1/projects/<project_id>` — archive the project by setting its status; it does not delete associated API keys or usage history.
+
+All endpoints require a valid session cookie. For POST, PATCH, and DELETE, first obtain a CSRF token from `/api/v1/auth/csrf`, then pass it in `X-CSRF-Token` while sending the matching CSRF cookie. Projects belonging to other users return the same `404` response as missing projects.
+
+No schema migration is required: the existing `projects` table already provides ownership, a unique public ID, name, status, and timestamps. Run the project tests using their isolated SQLite fixture (no configured PostgreSQL database is reset or altered):
+
+```powershell
+python -m unittest tests.test_projects -v
+```
+
+Project management does not create or verify API keys, change gateway authentication, enforce quotas, or provide project UI.
+
 ## Phase 6A database foundation
 
 This repository now includes the initial PostgreSQL foundation for the multi-user platform planned in later phases. The implementation is intentionally isolated from the current gateway so the existing credentials-based API behavior remains unchanged.

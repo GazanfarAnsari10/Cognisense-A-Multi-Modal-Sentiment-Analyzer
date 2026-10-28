@@ -151,6 +151,100 @@ Email</a>
 <!-- <h2>License</h2> --><br>
 <p>This project is for academic and research purposes.</p><hr>
 
+## Phase 6B user authentication
+
+The Flask application provides JSON email/password authentication at `/api/v1/auth/register`, `/api/v1/auth/login`, `/api/v1/auth/logout`, and `/api/v1/auth/me`. It uses the existing SQLAlchemy/PostgreSQL configuration and stores Argon2id password hashes only. Login creates a random opaque cookie token; only its SHA-256 digest is stored in `auth_sessions`. Logout revokes that server-side record. Login attempts are throttled by a database-backed email and client-address bucket.
+
+### Authentication configuration
+
+Set `AUTH_SECRET_KEY` to a unique random secret with at least 32 characters. Configure it through a deployment secret manager or an untracked local environment file. Do not commit its value. The default session lifetime is one hour. Cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` by default; set `AUTH_COOKIE_SECURE=false` only for local HTTP development. `AUTH_COOKIE_SAMESITE` may be `Lax` or `Strict`.
+
+Before `register`, `login`, or `logout`, fetch `GET /api/v1/auth/csrf`; submit the returned token in `X-CSRF-Token` and allow the `cognisense_csrf` cookie to be sent. The token cookie is signed and checked against the request header; authenticated logout also verifies the token is bound to its server-side session. `/me` requires the session cookie and returns only the user's name, email, and status.
+
+```powershell
+$env:AUTH_SECRET_KEY = '<at-least-32-character-random-secret>'
+$env:AUTH_SESSION_TTL_SECONDS = '3600'
+$env:AUTH_COOKIE_SECURE = 'false' # local HTTP only
+$env:AUTH_COOKIE_SAMESITE = 'Lax'
+$env:AUTH_LOGIN_MAX_ATTEMPTS = '5'
+$env:AUTH_LOGIN_WINDOW_SECONDS = '900'
+```
+
+Apply the additive schema migration to the existing database (this does not reset or recreate it):
+
+```powershell
+alembic upgrade head
+```
+
+`POST /register` accepts `{ "name": "...", "email": "...", "password": "..." }`; valid registrations receive a generic `202` response whether or not the normalized email already exists. Passwords must contain 12–128 characters. `POST /login` accepts email and password and returns the same generic credentials error for unknown users and incorrect passwords. Login throttles return `429` without disclosing account status. No email verification or password-reset flow is included: both require properly configured email delivery, token lifecycle, and operational controls before they are safe to enable.
+
+### Authentication tests
+
+```powershell
+python -m unittest tests.test_auth -v
+```
+
+These auth tests use a dedicated in-memory SQLite database instance created only by the test suite; application configuration still requires PostgreSQL and never falls back to SQLite. Production deployment must use HTTPS, retain the secret and database URL in a secret manager, review trusted reverse-proxy handling for client addresses, and periodically clean up expired/revoked session and login-attempt rows. Configure PostgreSQL availability, backups, monitoring, and pool limits for the deployment. The migration leaves `password_hash` nullable so pre-existing user rows are preserved; those accounts cannot log in until a separately secured credential-enrollment process is provided. Email verification, password reset, and account recovery are deferred because no email-delivery/token-lifecycle service is configured. This phase is not a complete production account-security system until those recovery/verification requirements and deployment controls have been reviewed.
+
+## Phase 6A database foundation
+
+This repository now includes the initial PostgreSQL foundation for the multi-user platform planned in later phases. The implementation is intentionally isolated from the current gateway so the existing credentials-based API behavior remains unchanged.
+
+### PostgreSQL prerequisites
+
+- Install PostgreSQL 14+ and make sure a reachable database server is available for local development and testing.
+- Create a dedicated database, for example `cognisense`.
+- Keep connection details in environment variables instead of storing credentials in source control.
+
+### Environment variables
+
+```powershell
+$env:DATABASE_URL = 'postgresql+psycopg://postgres:postgres@localhost:5432/cognisense'
+$env:DATABASE_ECHO = 'false'
+$env:DATABASE_POOL_SIZE = '5'
+$env:DATABASE_MAX_OVERFLOW = '10'
+$env:DATABASE_POOL_TIMEOUT = '30'
+$env:DATABASE_CONNECT_TIMEOUT = '10'
+```
+
+### Database initialization and migration commands
+
+```powershell
+# create the database if needed, then apply migrations
+alembic upgrade head
+```
+
+If the project is being set up from scratch, install the project dependencies first and then run Alembic with the configured PostgreSQL URL.
+
+### Schema overview
+
+The initial schema creates the following tables:
+
+- `users` — internal user accounts and account status.
+- `projects` — project metadata and ownership, including a unique public project identifier.
+- `api_keys` — project-scoped API keys with hashed secrets, prefixes, expiry, and revocation metadata.
+- `usage_records` — request summaries without storing full request bodies, transcripts, or uploaded files.
+- `plans` — reusable platform policy data for request limits, quotas, and active-key limits.
+
+The `projects` table references `users`, and `api_keys` and `usage_records` reference `projects`. Foreign keys use `RESTRICT` so audit and usage history is not silently erased when related records are removed.
+
+### Running database tests
+
+A dedicated PostgreSQL test database should be configured through `TEST_DATABASE_URL` to run the migration test. The database name must include `test`; the test never migrates the ordinary `DATABASE_URL`. The migration test skips when no dedicated test database is configured. Auth behavior tests use an isolated in-memory SQLite database and do not alter PostgreSQL.
+
+```powershell
+$env:TEST_DATABASE_URL = 'postgresql+psycopg://postgres:postgres@localhost:5432/cognisense_test'
+python -m unittest tests.test_database_setup -v
+```
+
+### Deployment considerations
+
+- Use a dedicated PostgreSQL service or managed database.
+- Keep connection strings in a secret manager or environment management system.
+- Configure pool limits and timeouts for production workloads.
+- Do not add plaintext API keys, passwords, or raw request payloads to the platform schema.
+- Keep the platform authentication endpoints separate from the existing API-key gateway contract.
+
 ## Feedback Gateway API
 
 The separate FastAPI gateway exposes the existing Cognisense analyzers without changing the Flask web application. It supports plain text, TXT/PDF documents, audio, video, and images; image inputs are included because the repository already provides an image analyzer. Multiple modalities can be sent in one request. Each input is analyzed independently and returned as a result entry (there is no cross-modal fusion model in the current analyzers).

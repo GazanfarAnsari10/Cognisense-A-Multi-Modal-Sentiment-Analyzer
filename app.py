@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request, jsonify
+from auth import auth_blueprint
 from analyzers.text_analyzer import analyze_text_from_string
 from analyzers.audio_analyzer import analyze_audio_file
 from analyzers.video_analyzer import analyze_video_file
@@ -24,6 +25,8 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100 MB limit
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+app.register_blueprint(auth_blueprint)
 
 @app.route("/")
 def index():
@@ -169,4 +172,3 @@ def handle_realtime_frame(payload):
 if __name__ == "__main__":
     # use socketio.run to allow websocket/server usage
     socketio.run(app, host="0.0.0.0", port=5000, debug=True)
-

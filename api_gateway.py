@@ -6,26 +6,29 @@ import hashlib
 import hmac
 import json
 import logging
+import math
 import os
 import re
 import tempfile
+import time
 import uuid
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.datastructures import UploadFile
 from starlette.middleware.cors import CORSMiddleware
 from werkzeug.utils import secure_filename
 
-from database.models import ApiKey, Project
+from database.models import ApiKey, Project, UsageRecord
 from database.session import get_session_factory
 from dotenv import load_dotenv
 from result_export import build_export
@@ -85,7 +88,13 @@ app.add_middleware(
 )
 
 
-def _error_response(request_id: str, status_code: int, code: str, message: str) -> JSONResponse:
+def _error_response(
+    request_id: str,
+    status_code: int,
+    code: str,
+    message: str,
+    headers: dict[str, str] | None = None,
+) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
         content={
@@ -93,6 +102,7 @@ def _error_response(request_id: str, status_code: int, code: str, message: str) 
             "request_id": request_id,
             "error": {"code": code, "message": message},
         },
+        headers=headers,
     )
 
 
@@ -143,6 +153,12 @@ class RequestMetadataAndSizeMiddleware:
 app.add_middleware(RequestMetadataAndSizeMiddleware, max_bytes=MAX_REQUEST_BYTES)
 
 
+@dataclass(frozen=True)
+class AuthenticatedProject:
+    public_project_id: str
+    api_key_id: int | None
+
+
 @app.exception_handler(HTTPException)
 async def http_error_handler(request: Request, exc: HTTPException) -> JSONResponse:
     code = {
@@ -153,9 +169,16 @@ async def http_error_handler(request: Request, exc: HTTPException) -> JSONRespon
         413: "request_too_large",
         415: "unsupported_media_type",
         422: "validation_error",
+        429: "rate_limited",
         503: "service_unavailable",
     }.get(exc.status_code, "request_failed")
-    return _error_response(request.state.request_id, exc.status_code, code, str(exc.detail))
+    return _error_response(
+        request.state.request_id,
+        exc.status_code,
+        code,
+        str(exc.detail),
+        exc.headers,
+    )
 
 
 @app.exception_handler(RequestValidationError)
@@ -214,7 +237,7 @@ def _legacy_api_keys_enabled() -> bool:
     raise HTTPException(status_code=503, detail="API authentication configuration is invalid.")
 
 
-def _authenticate_database_key(api_key: str) -> str | None:
+def _authenticate_database_key(api_key: str) -> AuthenticatedProject | None:
     match = DATABASE_API_KEY_PATTERN.fullmatch(api_key)
     if match is None:
         return None
@@ -225,7 +248,7 @@ def _authenticate_database_key(api_key: str) -> str | None:
     try:
         with get_session_factory()() as session:
             row = session.execute(
-                select(ApiKey.key_hash, Project.public_project_id)
+                select(ApiKey.id, ApiKey.key_hash, Project.public_project_id)
                 .join(Project, Project.id == ApiKey.project_id)
                 .where(
                     ApiKey.key_prefix == key_prefix,
@@ -244,29 +267,225 @@ def _authenticate_database_key(api_key: str) -> str | None:
 
     if row is None or not hmac.compare_digest(row.key_hash, presented_hash):
         return None
-    return row.public_project_id
+    return AuthenticatedProject(row.public_project_id, row.id)
+
+
+def _positive_setting(name: str, default: int, *, allow_zero: bool = False) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError:
+        logger.error("%s must be an integer", name)
+        raise HTTPException(status_code=503, detail="Request limits are not configured correctly.") from None
+    minimum = 0 if allow_zero else 1
+    if value < minimum:
+        logger.error("%s is outside its supported range", name)
+        raise HTTPException(status_code=503, detail="Request limits are not configured correctly.")
+    return value
+
+
+def _retry_after(oldest_request: datetime | None, window_seconds: int, now: datetime) -> int:
+    if oldest_request is None:
+        return window_seconds
+    if oldest_request.tzinfo is None:
+        oldest_request = oldest_request.replace(tzinfo=timezone.utc)
+    remaining = (oldest_request + timedelta(seconds=window_seconds) - now).total_seconds()
+    return max(1, math.ceil(remaining))
+
+
+def _usage_count(session, project_id: int, since: datetime):
+    return session.execute(
+        select(func.count(UsageRecord.id), func.min(UsageRecord.request_timestamp)).where(
+            UsageRecord.project_id == project_id,
+            UsageRecord.request_timestamp >= since,
+            UsageRecord.http_status_code != 429,
+        )
+    ).one()
+
+
+def _reserve_usage(principal: AuthenticatedProject) -> int:
+    rate_limit = _positive_setting("COGNISENSE_RATE_LIMIT_REQUESTS", 60)
+    rate_window = _positive_setting("COGNISENSE_RATE_LIMIT_WINDOW_SECONDS", 60)
+    default_daily_quota = _positive_setting(
+        "COGNISENSE_DEFAULT_DAILY_QUOTA",
+        0,
+        allow_zero=True,
+    )
+    now = datetime.now(timezone.utc)
+    rejection: tuple[int, str] | None = None
+    reservation_id: int | None = None
+    try:
+        with get_session_factory()() as session, session.begin():
+            project = session.scalar(
+                select(Project)
+                .where(Project.public_project_id == principal.public_project_id)
+                .with_for_update()
+            )
+            if project is None or project.status != "active":
+                raise HTTPException(status_code=401, detail="A valid X-API-Key header is required.")
+
+            if session.get_bind().dialect.name == "sqlite":
+                session.execute(
+                    update(Project)
+                    .where(Project.id == project.id)
+                    .values(updated_at=Project.updated_at)
+                )
+
+            env_count, env_oldest = _usage_count(
+                session,
+                project.id,
+                now - timedelta(seconds=rate_window),
+            )
+            if env_count >= rate_limit:
+                rejection = (
+                    _retry_after(env_oldest, rate_window, now),
+                    "The request limit has been reached. Try again later.",
+                )
+            elif project.plan is not None and project.plan.request_limit_per_minute > 0:
+                plan_count, plan_oldest = _usage_count(
+                    session,
+                    project.id,
+                    now - timedelta(minutes=1),
+                )
+                if plan_count >= project.plan.request_limit_per_minute:
+                    rejection = (
+                        _retry_after(plan_oldest, 60, now),
+                        "The request limit has been reached. Try again later.",
+                    )
+
+            quota_limits = [
+                limit
+                for limit in (
+                    default_daily_quota,
+                    project.plan.quota_limit_per_day if project.plan is not None else 0,
+                )
+                if limit > 0
+            ]
+            effective_quota = min(quota_limits) if quota_limits else 0
+            quota_oldest: datetime | None = None
+            if rejection is None and effective_quota:
+                quota_count, quota_oldest = _usage_count(
+                    session,
+                    project.id,
+                    now - timedelta(days=1),
+                )
+                if quota_count >= effective_quota:
+                    rejection = (
+                        _retry_after(quota_oldest, 86_400, now),
+                        "The project request quota has been reached. Try again later.",
+                    )
+
+            if rejection is None:
+                usage = UsageRecord(
+                    project_id=project.id,
+                    api_key_id=principal.api_key_id,
+                    endpoint="/api/v1/analyze",
+                    http_status_code=500,
+                    processing_duration_ms=0,
+                    request_timestamp=now,
+                )
+                session.add(usage)
+                session.flush()
+                reservation_id = usage.id
+            else:
+                session.add(
+                    UsageRecord(
+                        project_id=project.id,
+                        api_key_id=principal.api_key_id,
+                        endpoint="/api/v1/analyze",
+                        http_status_code=429,
+                        processing_duration_ms=0,
+                        request_timestamp=now,
+                    )
+                )
+    except HTTPException:
+        raise
+    except (SQLAlchemyError, RuntimeError, ValueError):
+        logger.error("Request admission and usage recording failed.")
+        raise HTTPException(
+            status_code=503,
+            detail="Request processing is temporarily unavailable.",
+        ) from None
+
+    if rejection is not None:
+        retry_after, message = rejection
+        raise HTTPException(
+            status_code=429,
+            detail=message,
+            headers={"Retry-After": str(retry_after)},
+        )
+    if reservation_id is None:
+        logger.error("Request usage reservation was not created.")
+        raise HTTPException(status_code=503, detail="Request processing is temporarily unavailable.")
+    return reservation_id
+
+
+def _finish_usage(usage_id: int, status_code: int, started_at: float) -> None:
+    duration_ms = max(0, int((time.monotonic() - started_at) * 1000))
+    try:
+        with get_session_factory()() as session, session.begin():
+            result = session.execute(
+                update(UsageRecord)
+                .where(UsageRecord.id == usage_id)
+                .values(
+                    http_status_code=status_code,
+                    processing_duration_ms=duration_ms,
+                )
+            )
+            if result.rowcount != 1:
+                raise SQLAlchemyError("Usage reservation was not found.")
+    except (SQLAlchemyError, RuntimeError, ValueError) as exc:
+        logger.error("Request outcome could not be recorded (%s).", type(exc).__name__)
+        raise HTTPException(
+            status_code=503,
+            detail="Request processing is temporarily unavailable.",
+        ) from None
 
 
 def authenticate_project(
+    response: Response,
     api_key: str | None = Depends(API_KEY_HEADER),
-) -> str:
+) -> Iterator[AuthenticatedProject]:
     if not api_key:
         raise HTTPException(status_code=401, detail="A valid X-API-Key header is required.")
 
     if api_key.startswith(DATABASE_API_KEY_PREFIX):
-        project_id = _authenticate_database_key(api_key)
+        principal = _authenticate_database_key(api_key)
+        if principal is None:
+            raise HTTPException(status_code=401, detail="A valid X-API-Key header is required.")
+    else:
+        if not _legacy_api_keys_enabled():
+            raise HTTPException(status_code=401, detail="A valid X-API-Key header is required.")
+        projects = _configured_api_keys()
+        project_id = next(
+            (
+                project_id
+                for project_id, configured_key in projects.items()
+                if hmac.compare_digest(api_key, configured_key)
+            ),
+            None,
+        )
         if project_id is None:
             raise HTTPException(status_code=401, detail="A valid X-API-Key header is required.")
-        return project_id
+        principal = AuthenticatedProject(project_id, None)
 
-    if not _legacy_api_keys_enabled():
-        raise HTTPException(status_code=401, detail="A valid X-API-Key header is required.")
-
-    projects = _configured_api_keys()
-    for project_id, configured_key in projects.items():
-        if hmac.compare_digest(api_key, configured_key):
-            return project_id
-    raise HTTPException(status_code=401, detail="A valid X-API-Key header is required.")
+    usage_id = _reserve_usage(principal)
+    started_at = time.monotonic()
+    status_code = 500
+    try:
+        yield principal
+        response_status = response.status_code if response is not None else None
+        status_code = response_status if isinstance(response_status, int) else 200
+    except HTTPException as exc:
+        status_code = exc.status_code
+        raise
+    except RequestValidationError:
+        status_code = 422
+        raise
+    except Exception:
+        status_code = 500
+        raise
+    finally:
+        _finish_usage(usage_id, status_code, started_at)
 
 
 def _validate_project_id(project_id: Any, authenticated_project: str) -> str:
@@ -391,7 +610,8 @@ async def health(request: Request) -> dict[str, Any]:
 )
 async def analyze_feedback(
     request: Request,
-    authenticated_project: str = Depends(authenticate_project),
+    response: Response,
+    authenticated_project: AuthenticatedProject = Depends(authenticate_project),
     export_format: str | None = Query(
         default=None,
         description="Optionally download the analyzer results as json, csv, or pdf.",
@@ -411,7 +631,7 @@ async def analyze_feedback(
             raise HTTPException(status_code=400, detail="Request body must contain valid JSON.") from exc
         if not isinstance(payload, dict):
             raise HTTPException(status_code=422, detail="JSON body must be an object.")
-        project_id = _validate_project_id(payload.get("project_id"), authenticated_project)
+        project_id = _validate_project_id(payload.get("project_id"), authenticated_project.public_project_id)
         text = payload.get("text")
         if text is not None and not isinstance(text, str):
             raise HTTPException(status_code=422, detail="text must be a string.")
@@ -422,7 +642,7 @@ async def analyze_feedback(
             raise HTTPException(status_code=422, detail="Provide non-empty text or one or more files.")
     elif content_type == "multipart/form-data":
         async with request.form() as form:
-            project_id = _validate_project_id(form.get("project_id"), authenticated_project)
+            project_id = _validate_project_id(form.get("project_id"), authenticated_project.public_project_id)
             text = form.get("text")
             if text is not None and not isinstance(text, str):
                 raise HTTPException(status_code=422, detail="text must be a string.")
@@ -485,6 +705,7 @@ async def analyze_feedback(
 
     failed = any("error" in result for result in results)
     if failed and all("error" in result for result in results):
+        response.status_code = 500
         return _error_response(request.state.request_id, 500, "analysis_failed", "All analyzers failed.")
     if export_format is not None:
         body, media_type, extension = build_export(

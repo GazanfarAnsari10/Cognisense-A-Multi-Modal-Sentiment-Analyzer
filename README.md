@@ -317,6 +317,22 @@ To enable database authentication, apply the existing platform schema migrations
 
 After confirming database keys work for every intended client and deployment, retire legacy authentication by setting `COGNISENSE_LEGACY_API_KEYS_ENABLED=false` and removing `COGNISENSE_API_KEYS` from gateway secrets. Keep database key verification enabled. This switch rejects all non-`cgs_live_` keys but does not affect valid database keys. CORS origins are optional and should list only trusted browser origins. The request-size limit defaults to 25 MiB and includes multipart overhead.
 
+### Rate limits, quotas, and usage
+
+Authenticated analysis requests are limited per project across all API keys and gateway workers. Configure `COGNISENSE_RATE_LIMIT_REQUESTS` (default `60`) and `COGNISENSE_RATE_LIMIT_WINDOW_SECONDS` (default `60`) for a rolling request window. A project's assigned plan can impose an additional `request_limit_per_minute` cap over its own rolling 60-second window; both the configured window and plan window must be available. `COGNISENSE_DEFAULT_DAILY_QUOTA` (default `0`, meaning unlimited) sets a fallback rolling 24-hour quota. A positive `plans.quota_limit_per_day` is combined with that setting using the lower positive value; `0` in a plan means no plan-specific quota. Requests exceeding either limit return `429` with a `Retry-After` header. The limits are request counts, not billing units.
+
+The gateway serializes admission by locking the project row in the shared database, records a reservation before invoking any analyzer, and finalizes that row with the HTTP outcome and processing duration. This coordinates multiple gateway processes using PostgreSQL and fails closed if admission/usage recording is unavailable. Rate-limited requests are also recorded but do not consume additional rate-limit or quota capacity. `usage_records` stores only the project/key foreign keys, endpoint, timestamps, HTTP status, and duration; request bodies, secrets, transcripts, filenames, and uploaded data are not stored. Legacy environment-key requests also require their mapped project ID to exist and be active in the platform database so they can be limited and tracked.
+
+Set these optional gateway settings in the deployment environment:
+
+```powershell
+$env:COGNISENSE_RATE_LIMIT_REQUESTS='60'
+$env:COGNISENSE_RATE_LIMIT_WINDOW_SECONDS='60'
+$env:COGNISENSE_DEFAULT_DAILY_QUOTA='0' # 0 means no default daily quota
+```
+
+Limits and quotas use rolling windows based on request timestamps, so there is no calendar-day reset. Plan quotas are read from the existing `plans` table. No schema migration is required. Existing `usage_records` remain intact; each newly admitted request is reserved before analysis and updated with its final status and duration, while rejected rate/quota requests receive a `429` row.
+
 ### Endpoints
 
 - `GET /api/v1/health` — public health check.

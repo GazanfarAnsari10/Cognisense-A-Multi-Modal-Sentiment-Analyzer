@@ -294,18 +294,28 @@ The separate FastAPI gateway exposes the existing Cognisense analyzers without c
 
 ### Setup
 
-Install the project requirements, then set the gateway environment variables. Copy `.env.example` as a reference; the application does not automatically load a `.env` file.
+Install the project requirements, then set the gateway environment variables. The gateway loads a local `.env` file when present; for production, inject these settings through the deployment's secret-management configuration.
 
 PowerShell example:
 
 ```powershell
+$env:DATABASE_URL='postgresql+psycopg://user:password@localhost:5432/cognisense'
+$env:COGNISENSE_LEGACY_API_KEYS_ENABLED='true'
 $env:COGNISENSE_API_KEYS='{"my-project":"replace-this-with-a-long-random-secret"}'
 $env:COGNISENSE_CORS_ORIGINS='https://portal.example.com'
 $env:COGNISENSE_MAX_REQUEST_BYTES='26214400'
 uvicorn api_gateway:app --host 0.0.0.0 --port 8000
 ```
 
-`COGNISENSE_API_KEYS` is a JSON object mapping project IDs to unique API keys (minimum 16 characters). Keep keys in a secret manager in deployment; do not commit real keys. CORS origins are optional and should list only trusted browser origins. The request-size limit defaults to 25 MiB and includes multipart overhead.
+### API-key authentication and migration
+
+The gateway keeps the existing `X-API-Key` header and request/response contract. Keys created by Phase 6D use the `cgs_live_` prefix and are authenticated against the shared PostgreSQL database configured by `DATABASE_URL`; the supplied secret is SHA-256 hashed and compared with the stored hash. Only active keys with no revocation timestamp, no elapsed expiry, and an active project are accepted. The authenticated project ID is read from the key's associated project record and the submitted `project_id` must still match it. Unknown, malformed, revoked, expired, and archived-project keys receive the same generic `401` authentication response. Database verification errors fail closed with a generic `503`.
+
+Authentication precedence is explicit: any presented key starting with the reserved `cgs_live_` prefix is treated only as a database key. A malformed or invalid database key is rejected and is never tried against the legacy key list. Other key formats use the legacy `COGNISENSE_API_KEYS` JSON mapping only when `COGNISENSE_LEGACY_API_KEYS_ENABLED=true` (the compatibility default during migration). Legacy values must be at least 16 characters. Keep them in a secret manager and do not commit real values.
+
+To enable database authentication, apply the existing platform schema migrations to the intended PostgreSQL database with `alembic upgrade head`, configure the gateway's `DATABASE_URL` to that same database, and create a key through the authenticated Phase 6D project endpoint. Test the returned secret with the gateway while preserving the `X-API-Key` header and matching project ID. The gateway database verifier opens and closes sessions using the platform's existing SQLAlchemy session factory; it does not create schema, update last-used time, log keys, or record usage.
+
+After confirming database keys work for every intended client and deployment, retire legacy authentication by setting `COGNISENSE_LEGACY_API_KEYS_ENABLED=false` and removing `COGNISENSE_API_KEYS` from gateway secrets. Keep database key verification enabled. This switch rejects all non-`cgs_live_` keys but does not affect valid database keys. CORS origins are optional and should list only trusted browser origins. The request-size limit defaults to 25 MiB and includes multipart overhead.
 
 ### Endpoints
 

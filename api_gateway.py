@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import logging
@@ -18,13 +19,18 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from fastapi.security import APIKeyHeader
+from sqlalchemy import or_, select
+from sqlalchemy.exc import SQLAlchemyError
 from starlette.datastructures import UploadFile
 from starlette.middleware.cors import CORSMiddleware
 from werkzeug.utils import secure_filename
 
-from utils import extract_text_from_pdf
-from result_export import build_export
+from database.models import ApiKey, Project
+from database.session import get_session_factory
 from dotenv import load_dotenv
+from result_export import build_export
+from utils import extract_text_from_pdf
+
 load_dotenv()
 
 
@@ -32,6 +38,8 @@ logger = logging.getLogger(__name__)
 MAX_REQUEST_BYTES = int(os.getenv("COGNISENSE_MAX_REQUEST_BYTES", str(25 * 1024 * 1024)))
 MAX_FILES = 5
 PROJECT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+DATABASE_API_KEY_PATTERN = re.compile(r"^(cgs_live_[A-Za-z0-9_-]{16})_([A-Za-z0-9_-]{43})$")
+DATABASE_API_KEY_PREFIX = "cgs_live_"
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 SUPPORTED_EXTENSIONS = {
     ".txt": "document",
@@ -196,10 +204,62 @@ def _configured_api_keys() -> dict[str, str]:
     return parsed
 
 
-async def authenticate_project(
+def _legacy_api_keys_enabled() -> bool:
+    setting = os.getenv("COGNISENSE_LEGACY_API_KEYS_ENABLED", "true").strip().lower()
+    if setting in {"1", "true", "yes", "on"}:
+        return True
+    if setting in {"0", "false", "no", "off"}:
+        return False
+    logger.error("COGNISENSE_LEGACY_API_KEYS_ENABLED must be a boolean value")
+    raise HTTPException(status_code=503, detail="API authentication configuration is invalid.")
+
+
+def _authenticate_database_key(api_key: str) -> str | None:
+    match = DATABASE_API_KEY_PATTERN.fullmatch(api_key)
+    if match is None:
+        return None
+
+    key_prefix = match.group(1)
+    presented_hash = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+    now = datetime.now(timezone.utc)
+    try:
+        with get_session_factory()() as session:
+            row = session.execute(
+                select(ApiKey.key_hash, Project.public_project_id)
+                .join(Project, Project.id == ApiKey.project_id)
+                .where(
+                    ApiKey.key_prefix == key_prefix,
+                    ApiKey.status == "active",
+                    ApiKey.revoked_at.is_(None),
+                    or_(ApiKey.expires_at.is_(None), ApiKey.expires_at > now),
+                    Project.status == "active",
+                )
+            ).one_or_none()
+    except (SQLAlchemyError, RuntimeError, ValueError):
+        logger.error("Database API key verification is temporarily unavailable.")
+        raise HTTPException(
+            status_code=503,
+            detail="API authentication is temporarily unavailable.",
+        ) from None
+
+    if row is None or not hmac.compare_digest(row.key_hash, presented_hash):
+        return None
+    return row.public_project_id
+
+
+def authenticate_project(
     api_key: str | None = Depends(API_KEY_HEADER),
 ) -> str:
     if not api_key:
+        raise HTTPException(status_code=401, detail="A valid X-API-Key header is required.")
+
+    if api_key.startswith(DATABASE_API_KEY_PREFIX):
+        project_id = _authenticate_database_key(api_key)
+        if project_id is None:
+            raise HTTPException(status_code=401, detail="A valid X-API-Key header is required.")
+        return project_id
+
+    if not _legacy_api_keys_enabled():
         raise HTTPException(status_code=401, detail="A valid X-API-Key header is required.")
 
     projects = _configured_api_keys()

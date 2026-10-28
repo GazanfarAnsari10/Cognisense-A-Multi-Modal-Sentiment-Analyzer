@@ -1,10 +1,18 @@
+import hashlib
 import os
 import unittest
+import uuid
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, select
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 import api_gateway
+from database.models import ApiKey, Base, Project, User
 
 
 class FeedbackGatewayTests(unittest.TestCase):
@@ -14,7 +22,8 @@ class FeedbackGatewayTests(unittest.TestCase):
             {
                 "COGNISENSE_API_KEYS": (
                     '{"example-project":"replace-with-a-long-random-secret"}'
-                )
+                ),
+                "COGNISENSE_LEGACY_API_KEYS_ENABLED": "true",
             },
         )
         self.environment.start()
@@ -29,6 +38,73 @@ class FeedbackGatewayTests(unittest.TestCase):
         self.mock_analyzer = self.analyzer.start()
         self.addCleanup(self.analyzer.stop)
         self.client = TestClient(api_gateway.app)
+        self.engine = create_engine(
+            "sqlite+pysqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(self.engine)
+        self.session_factory = sessionmaker(bind=self.engine, expire_on_commit=False)
+        self.session_factory_patch = patch(
+            "api_gateway.get_session_factory",
+            return_value=self.session_factory,
+        )
+        self.session_factory_patch.start()
+        self.addCleanup(self.session_factory_patch.stop)
+        self.addCleanup(self.engine.dispose)
+        self.project_id = self._create_database_project()
+
+    def _create_database_project(self, status="active"):
+        with self.session_factory.begin() as session:
+            owner = User(name="Gateway Test Owner", email=f"{uuid.uuid4()}@example.com")
+            session.add(owner)
+            session.flush()
+            project = Project(
+                owner_user_id=owner.id,
+                display_name="Gateway Test Project",
+                public_project_id=str(uuid.uuid4()),
+                status=status,
+            )
+            session.add(project)
+            session.flush()
+            return project.public_project_id
+
+    def _create_database_key(
+        self,
+        *,
+        project_id=None,
+        status="active",
+        revoked_at=None,
+        expires_at=None,
+    ):
+        prefix = f"cgs_live_{uuid.uuid4().hex[:16]}"
+        secret = f"{prefix}_{uuid.uuid4().hex}{uuid.uuid4().hex[:11]}"
+        with self.session_factory.begin() as session:
+            project = session.scalar(
+                select(Project).where(
+                    Project.public_project_id == (project_id or self.project_id)
+                )
+            )
+            key = ApiKey(
+                project_id=project.id,
+                key_prefix=prefix,
+                key_hash=hashlib.sha256(secret.encode("utf-8")).hexdigest(),
+                status=status,
+                revoked_at=revoked_at,
+                expires_at=expires_at,
+            )
+            session.add(key)
+        return secret
+
+    def _analyze_with_key(self, key, project_id=None):
+        return self.client.post(
+            "/api/v1/analyze",
+            headers={"X-API-Key": key},
+            json={
+                "project_id": project_id or self.project_id,
+                "text": "Database key authentication",
+            },
+        )
 
     def test_health_returns_request_id(self):
         response = self.client.get(
@@ -197,6 +273,104 @@ class FeedbackGatewayTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.json()["error"]["code"], "unauthorized")
+
+    def test_database_key_authenticates_and_uses_database_project_identity(self):
+        secret = self._create_database_key()
+        response = self._analyze_with_key(secret)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["project_id"], self.project_id)
+        self.mock_analyzer.assert_called_once()
+
+    def test_invalid_database_keys_never_fall_back_to_legacy_auth(self):
+        with patch.dict(
+            os.environ,
+            {
+                "COGNISENSE_API_KEYS": (
+                    '{"example-project":"cgs_live_short"}'
+                ),
+            },
+        ):
+            for key in ("cgs_live_short", "cgs_live_" + "a" * 59):
+                response = self._analyze_with_key(key, project_id="example-project")
+                self.assertEqual(response.status_code, 401)
+                self.assertEqual(response.json()["error"]["code"], "unauthorized")
+        self.mock_analyzer.assert_not_called()
+
+    def test_unknown_database_key_is_rejected(self):
+        prefix = f"cgs_live_{uuid.uuid4().hex[:16]}"
+        unknown = f"{prefix}_{uuid.uuid4().hex}{uuid.uuid4().hex[:11]}"
+
+        response = self._analyze_with_key(unknown)
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["error"]["message"], "A valid X-API-Key header is required.")
+        self.mock_analyzer.assert_not_called()
+
+    def test_database_key_hash_must_match_exact_presented_key(self):
+        secret = self._create_database_key()
+        with self.session_factory.begin() as session:
+            key = session.scalar(select(ApiKey))
+            key.key_hash = hashlib.sha256(b"a different key").hexdigest()
+
+        response = self._analyze_with_key(secret)
+
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["error"]["code"], "unauthorized")
+        self.mock_analyzer.assert_not_called()
+
+    def test_revoked_expired_and_inactive_project_keys_are_rejected(self):
+        rejected = [
+            self._create_database_key(status="revoked"),
+            self._create_database_key(revoked_at=datetime.now(timezone.utc)),
+            self._create_database_key(expires_at=datetime.now(timezone.utc) - timedelta(seconds=1)),
+        ]
+        archived_project = self._create_database_project(status="archived")
+        rejected.append(self._create_database_key(project_id=archived_project))
+
+        for secret in rejected:
+            with self.subTest(secret_prefix=secret[:20]):
+                response = self._analyze_with_key(secret)
+                self.assertEqual(response.status_code, 401)
+                self.assertEqual(response.json()["error"]["code"], "unauthorized")
+        self.mock_analyzer.assert_not_called()
+
+    def test_database_key_cannot_claim_another_project(self):
+        secret = self._create_database_key()
+        other_project = self._create_database_project()
+
+        response = self._analyze_with_key(secret, project_id=other_project)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["error"]["code"], "forbidden")
+        self.mock_analyzer.assert_not_called()
+
+    def test_database_errors_fail_closed_without_exposing_details_or_key(self):
+        secret = self._create_database_key()
+        self.session_factory_patch.stop()
+        failed_factory = patch(
+            "api_gateway.get_session_factory",
+            side_effect=SQLAlchemyError(f"sensitive database error for {secret}"),
+        )
+        failed_factory.start()
+        self.addCleanup(failed_factory.stop)
+
+        response = self._analyze_with_key(secret)
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["error"]["code"], "service_unavailable")
+        self.assertNotIn(secret, response.text)
+        self.assertNotIn("sensitive database error", response.text)
+        self.mock_analyzer.assert_not_called()
+
+    def test_legacy_auth_can_be_disabled_during_migration(self):
+        with patch.dict(os.environ, {"COGNISENSE_LEGACY_API_KEYS_ENABLED": "false"}):
+            legacy_response = self._analyze_with_key("replace-with-a-long-random-secret", "example-project")
+            database_secret = self._create_database_key()
+            database_response = self._analyze_with_key(database_secret)
+
+        self.assertEqual(legacy_response.status_code, 401)
+        self.assertEqual(database_response.status_code, 200)
 
     def test_streaming_request_limit_returns_413(self):
         limited_app = api_gateway.FastAPI()

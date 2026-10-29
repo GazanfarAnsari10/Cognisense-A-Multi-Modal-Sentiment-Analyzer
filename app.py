@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, jsonify
 from auth import auth_blueprint
 from projects import projects_blueprint
+from developer_portal import developer_blueprint
 from analyzers.text_analyzer import analyze_text_from_string
 from analyzers.audio_analyzer import analyze_audio_file
 from analyzers.video_analyzer import analyze_video_file
@@ -12,6 +13,7 @@ import docx
 import PyPDF2 
 from flask_socketio import SocketIO, emit
 from analyzers.realtime_video_analyzer import analyze_frame_from_b64
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 
 
@@ -24,11 +26,20 @@ def allowed_file(filename):
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100 MB limit
+try:
+    trusted_proxy_hops = int(os.getenv("COGNISENSE_TRUSTED_PROXY_HOPS", "0"))
+except ValueError:
+    raise RuntimeError("COGNISENSE_TRUSTED_PROXY_HOPS must be a non-negative integer.") from None
+if trusted_proxy_hops < 0:
+    raise RuntimeError("COGNISENSE_TRUSTED_PROXY_HOPS must be a non-negative integer.")
+if trusted_proxy_hops:
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=trusted_proxy_hops, x_proto=trusted_proxy_hops)
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app.register_blueprint(auth_blueprint)
 app.register_blueprint(projects_blueprint)
+app.register_blueprint(developer_blueprint)
 
 @app.route("/")
 def index():
@@ -172,5 +183,4 @@ def handle_realtime_frame(payload):
 
 
 if __name__ == "__main__":
-    # use socketio.run to allow websocket/server usage
-    socketio.run(app, host="0.0.0.0", port=5000, debug=True)
+    socketio.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=False)

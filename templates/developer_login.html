@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="same-origin">
+  <title>Developer Access | Cognisense</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/developer.css') }}">
+</head>
+<body class="dev-body">
+  <main class="auth-shell">
+    <a class="dev-brand" href="/" aria-label="Cognisense home"><span class="brand-mark">C</span><span>COGNISENSE <small>DEVELOPER ACCESS</small></span></a>
+    <section class="auth-layout" aria-labelledby="auth-title">
+      <div class="auth-intro">
+        <p class="eyebrow">Developer workspace</p>
+        <h1 id="auth-title">Build with<br><span>more signal.</span></h1>
+        <p>Manage your projects, API credentials, and request activity in one secure workspace.</p>
+        <a class="text-link" href="/">&larr; Back to Cognisense</a>
+      </div>
+      <div class="auth-panel">
+        <div class="auth-tabs" role="tablist" aria-label="Account access">
+          <button type="button" class="auth-tab selected" id="login-tab" role="tab" aria-selected="true" aria-controls="auth-form" data-mode="login">Sign in</button>
+          <button type="button" class="auth-tab" id="register-tab" role="tab" aria-selected="false" aria-controls="auth-form" data-mode="register">Create account</button>
+        </div>
+        <h2 id="form-title">Welcome back</h2>
+        <p class="form-caption" id="form-caption">Sign in to your developer workspace.</p>
+        <form id="auth-form" novalidate>
+          <div class="form-field" id="name-field" hidden>
+            <label for="name">Your name</label>
+            <input id="name" name="name" autocomplete="name" maxlength="255">
+          </div>
+          <div class="form-field">
+            <label for="email">Email address</label>
+            <input id="email" name="email" type="email" autocomplete="email" required maxlength="254">
+          </div>
+          <div class="form-field">
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required minlength="12" maxlength="128">
+            <small id="password-hint" hidden>Use 12 to 128 characters.</small>
+          </div>
+          <p class="form-message" id="form-message" role="status" aria-live="polite"></p>
+          <button class="button-primary" id="submit-button" type="submit">Sign in <span aria-hidden="true">&rarr;</span></button>
+        </form>
+        <p class="security-note">Your account is protected by Cognisense server-side sessions.</p>
+      </div>
+    </section>
+  </main>
+  <script>
+    (() => {
+      const form = document.querySelector('#auth-form');
+      const nameField = document.querySelector('#name-field');
+      const nameInput = document.querySelector('#name');
+      const password = document.querySelector('#password');
+      const message = document.querySelector('#form-message');
+      const button = document.querySelector('#submit-button');
+      let mode = 'login';
+
+      function setMode(nextMode) {
+        mode = nextMode;
+        const registering = mode === 'register';
+        document.querySelector('#login-tab').classList.toggle('selected', !registering);
+        document.querySelector('#register-tab').classList.toggle('selected', registering);
+        document.querySelector('#login-tab').setAttribute('aria-selected', String(!registering));
+        document.querySelector('#register-tab').setAttribute('aria-selected', String(registering));
+        nameField.hidden = !registering;
+        nameInput.required = registering;
+        password.autocomplete = registering ? 'new-password' : 'current-password';
+        document.querySelector('#password-hint').hidden = !registering;
+        document.querySelector('#form-title').textContent = registering ? 'Create your account' : 'Welcome back';
+        document.querySelector('#form-caption').textContent = registering ? 'Start managing your Cognisense projects.' : 'Sign in to your developer workspace.';
+        button.innerHTML = registering ? 'Create account <span aria-hidden="true">&rarr;</span>' : 'Sign in <span aria-hidden="true">&rarr;</span>';
+        message.textContent = '';
+        message.className = 'form-message';
+      }
+
+      document.querySelectorAll('.auth-tab').forEach(tab => tab.addEventListener('click', () => setMode(tab.dataset.mode)));
+      form.addEventListener('submit', async event => {
+        event.preventDefault();
+        message.textContent = '';
+        if (!form.reportValidity()) return;
+        button.disabled = true;
+        button.textContent = mode === 'register' ? 'Creating account…' : 'Signing in…';
+        try {
+          const csrfResponse = await fetch('/api/v1/auth/csrf', { credentials: 'same-origin', cache: 'no-store' });
+          const csrfPayload = await csrfResponse.json();
+          if (!csrfResponse.ok) throw new Error('Developer access is temporarily unavailable.');
+          const credentials = { email: form.email.value.trim(), password: password.value };
+          if (mode === 'register') {
+            const registration = await fetch('/api/v1/auth/register', {
+              method: 'POST', credentials: 'same-origin', cache: 'no-store',
+              headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfPayload.data.csrf_token },
+              body: JSON.stringify({ ...credentials, name: nameInput.value.trim() })
+            });
+            if (!registration.ok) {
+              const result = await registration.json();
+              throw new Error(result.error?.message || 'Check your name, email, and password and try again.');
+            }
+          }
+          const login = await fetch('/api/v1/auth/login', {
+            method: 'POST', credentials: 'same-origin', cache: 'no-store',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfPayload.data.csrf_token },
+            body: JSON.stringify(credentials)
+          });
+          const result = await login.json();
+          if (!login.ok) {
+            throw new Error(result.error?.code === 'invalid_credentials'
+              ? 'Invalid email or password.'
+              : result.error?.message || 'Sign in could not be completed.');
+          }
+          window.location.replace({{ next_url|tojson }});
+        } catch (error) {
+          message.textContent = error.message || 'A connection error occurred. Please try again.';
+          message.classList.add('error');
+          button.disabled = false;
+          setMode(mode);
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

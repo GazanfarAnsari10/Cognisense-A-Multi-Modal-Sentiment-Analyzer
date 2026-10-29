@@ -53,7 +53,10 @@ def _settings() -> dict[str, Any]:
     same_site = os.getenv("AUTH_COOKIE_SAMESITE", "Lax").strip().capitalize()
     if same_site not in {"Lax", "Strict"}:
         raise ValueError("AUTH_COOKIE_SAMESITE must be Lax or Strict.")
-    secure_cookie = os.getenv("AUTH_COOKIE_SECURE", "true").strip().lower() not in {"0", "false", "no", "off"}
+    secure_setting = os.getenv("AUTH_COOKIE_SECURE", "true").strip().lower()
+    if secure_setting not in {"1", "true", "yes", "on", "0", "false", "no", "off"}:
+        raise ValueError("AUTH_COOKIE_SECURE must be a boolean value.")
+    secure_cookie = secure_setting in {"1", "true", "yes", "on"}
     return {
         "session_ttl": session_ttl,
         "login_limit": login_limit,

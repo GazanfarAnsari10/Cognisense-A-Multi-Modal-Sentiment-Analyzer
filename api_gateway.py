@@ -15,7 +15,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
@@ -25,6 +25,7 @@ from fastapi.security import APIKeyHeader
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.datastructures import UploadFile
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.cors import CORSMiddleware
 from werkzeug.utils import secure_filename
 
@@ -441,10 +442,68 @@ def _finish_usage(usage_id: int, status_code: int, started_at: float) -> None:
         ) from None
 
 
+class UsageFinalizationMiddleware:
+    """Persist the response outcome before allowing response headers to leave."""
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        finalization_failed = False
+        async def tracked_send(message: dict[str, Any]) -> None:
+            nonlocal finalization_failed
+            if message["type"] == "http.response.start":
+                tracking = scope.get("state", {}).get("usage_tracking")
+                if tracking is None:
+                    await send(message)
+                    return
+                try:
+                    await run_in_threadpool(
+                        _finish_usage,
+                        tracking["usage_id"],
+                        message["status"],
+                        tracking["started_at"],
+                    )
+                except HTTPException:
+                    finalization_failed = True
+                    request_id = scope.get("state", {}).get("request_id", "unknown")
+                    content = json.dumps({
+                        "success": False,
+                        "request_id": request_id,
+                        "error": {
+                            "code": "service_unavailable",
+                            "message": "Request processing is temporarily unavailable.",
+                        },
+                    }).encode("utf-8")
+                    headers = [
+                        (key, value)
+                        for key, value in message.get("headers", [])
+                        if key.lower() not in {b"content-length", b"content-type", b"content-disposition"}
+                    ]
+                    headers.extend([
+                        (b"content-type", b"application/json"),
+                        (b"content-length", str(len(content)).encode("ascii")),
+                    ])
+                    await send({**message, "status": 503, "headers": headers})
+                    await send({"type": "http.response.body", "body": content, "more_body": False})
+                    return
+            if not finalization_failed:
+                await send(message)
+
+        await self.app(scope, receive, tracked_send)
+
+
+app.add_middleware(UsageFinalizationMiddleware)
+
+
 def authenticate_project(
-    response: Response,
+    request: Request,
     api_key: str | None = Depends(API_KEY_HEADER),
-) -> Iterator[AuthenticatedProject]:
+) -> AuthenticatedProject:
     if not api_key:
         raise HTTPException(status_code=401, detail="A valid X-API-Key header is required.")
 
@@ -469,23 +528,8 @@ def authenticate_project(
         principal = AuthenticatedProject(project_id, None)
 
     usage_id = _reserve_usage(principal)
-    started_at = time.monotonic()
-    status_code = 500
-    try:
-        yield principal
-        response_status = response.status_code if response is not None else None
-        status_code = response_status if isinstance(response_status, int) else 200
-    except HTTPException as exc:
-        status_code = exc.status_code
-        raise
-    except RequestValidationError:
-        status_code = 422
-        raise
-    except Exception:
-        status_code = 500
-        raise
-    finally:
-        _finish_usage(usage_id, status_code, started_at)
+    request.state.usage_tracking = {"usage_id": usage_id, "started_at": time.monotonic()}
+    return principal
 
 
 def _validate_project_id(project_id: Any, authenticated_project: str) -> str:

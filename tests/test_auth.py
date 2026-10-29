@@ -147,6 +147,12 @@ class AuthenticationTests(unittest.TestCase):
         )
         self.assertIn("Secure", csrf_cookie)
 
+    def test_invalid_secure_cookie_setting_fails_closed(self):
+        with patch.dict(os.environ, {"AUTH_COOKIE_SECURE": "sometimes"}):
+            response = self.client.get("/api/v1/auth/csrf")
+
+        self.assertEqual(response.status_code, 503)
+
     def test_invalid_credentials_are_generic_and_rate_limited(self):
         self._register()
         wrong_password = self._login(password="incorrect-password")

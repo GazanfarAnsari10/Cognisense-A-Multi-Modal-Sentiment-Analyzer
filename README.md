@@ -7,6 +7,7 @@ Cognisense is an AI-powered Multi-Modal Sentiment Analysis system that detects a
 <h2><b>Project Overview:</b></h2>
 
 Traditional sentiment analysis focuses only on text. Cognisense goes beyond that by integrating:
+
 <ul>
 <li>Text Sentiment Analysis</li>
 <li>Audio Emotion Detection</li>
@@ -16,7 +17,6 @@ Traditional sentiment analysis focuses only on text. Cognisense goes beyond that
 </ul>
 
 By combining multiple modalities, Cognisense provides more accurate and context-aware sentiment predictions.
-
 
 <hr>
 
@@ -128,7 +128,7 @@ B.E– Artificial Intelligence & Machine Learning
 <br>
 <a href="https://www.linkedin.com/in/mohammad-gazanfar-ansari" target="_blank">
 LinkedIn</a>
-&nbsp; | &nbsp;
+  |  
 <a href="mailto:mohammadgazanfaransari@gmail.com">
 Email</a>
 </p>
@@ -141,7 +141,7 @@ Email</a>
 <p>
 <a href="https://www.linkedin.com/in/mohammad-gazanfar-ansari" target="_blank">
 LinkedIn</a>
-&nbsp; | &nbsp;
+  |  
 <a href="mailto:gazi.freestyle@gmail.com">
 Email</a>
 </p> -->
@@ -149,6 +149,7 @@ Email</a>
 <!-- <hr> -->
 
 <!-- <h2>License</h2> --><br>
+
 <p>This project is for academic and research purposes.</p><hr>
 
 ## Phase 6B user authentication
@@ -429,7 +430,7 @@ $env:PORT = '5500'
 node .\examples\node-feedback-proxy.mjs
 ```
 
-Open <http://127.0.0.1:5500/> and submit feedback. The browser sends it to `http://127.0.0.1:5500/api/cognisense-feedback`; the Node server adds the API key and forwards it to the gateway at port 8000. The key is not served to the browser. The local example key is for development only; use a generated secret and HTTPS for deployment.
+Open [http://127.0.0.1:5500/](http://127.0.0.1:5500/) and submit feedback. The browser sends it to `http://127.0.0.1:5500/api/cognisense-feedback`; the Node server adds the API key and forwards it to the gateway at port 8000. The key is not served to the browser. The local example key is for development only; use a generated secret and HTTPS for deployment.
 
 For deployment, run the proxy behind your website's HTTPS reverse proxy and expose `/api/cognisense-feedback` on the same origin as the page. The example accepts JSON `{ "text": "..." }`, limits body size and text length, and returns the gateway's standardized result envelope. It intentionally does not enable cross-origin access.
 
@@ -462,6 +463,34 @@ const result = await cognisense.analyze({
 });
 console.log(result.data.status, result.data.results);
 ```
+
+## Developer Portal and production operations
+
+The existing **Developer/API Access** link in the analyzer sidebar and homepage footer opens `/developer`. Anonymous visitors receive the developer sign-in/registration page; a valid Phase 6B server-side session goes to `/developer/dashboard`. The portal reuses `/api/v1/auth/*` and `/api/v1/projects/*`; it does not introduce another account store or change analyzer page authentication. `/api/v1/developer/dashboard` is an authenticated JSON endpoint and returns `401` rather than an HTML redirect. Dashboard pages and responses use `Cache-Control: no-store`; a browser back-forward-cache restore checks the session again.
+
+The dashboard shows the authenticated user's projects, active key metadata, recent recorded requests, status counts, applicable plan/default quotas, and configured/plan rate limits. Values come from the shared database. When no project or usage records exist, the interface labels that state rather than inventing sample values. API-key secrets are displayed only in the successful create response and the immediate browser view; subsequent list/detail responses contain metadata only. The UI calls the existing owner-checked project and key routes and refreshes CSRF tokens before mutations.
+
+### Configuration and startup
+
+Use the existing `.env.example` as a reference, but keep real values in an untracked local environment file or deployment secret manager. Required platform configuration includes a PostgreSQL `DATABASE_URL` and a unique `AUTH_SECRET_KEY` of at least 32 characters. Keep `AUTH_COOKIE_SECURE=true` in deployed HTTPS environments; `false` is only for local HTTP development. `AUTH_COOKIE_SAMESITE` accepts `Lax` or `Strict`. `COGNISENSE_TRUSTED_PROXY_HOPS` defaults to `0`. Set it only to the exact number of trusted proxies that overwrite `X-Forwarded-For` and `X-Forwarded-Proto`; never trust forwarded headers directly from arbitrary clients. The application uses those trusted values for client address throttling and secure URL handling.
+
+Install dependencies and apply additive migrations to the intended PostgreSQL database:
+
+```powershell
+pip install -r requirements.txt
+$env:DATABASE_URL='postgresql+psycopg://user:password@localhost:5432/cognisense'
+$env:AUTH_SECRET_KEY='<unique-random-secret-at-least-32-characters>'
+$env:AUTH_COOKIE_SECURE='true'
+alembic upgrade head
+```
+
+For local development only, set `AUTH_COOKIE_SECURE=false` and start Flask with `python app.py`; the built-in server is not a production server. Run the separate gateway with `uvicorn api_gateway:app --host 127.0.0.1 --port 8000`. In production, run Flask-SocketIO with a supported production WSGI server/worker and the deployment's process manager, and run the FastAPI gateway with a production ASGI server. Terminate TLS at a managed HTTPS load balancer or reverse proxy, forward only the required application routes, restrict gateway access, and configure trusted proxy hops consistently. Validate WebSocket support for the real-time analyzer through that proxy. Do not expose development server ports publicly.
+
+Existing PostgreSQL migrations are under `alembic/versions`; this portal adds no tables or migration. Keep the Flask application and gateway pointed at the same database. Keep `COGNISENSE_LEGACY_API_KEYS_ENABLED=false` and remove `COGNISENSE_API_KEYS` after all legacy clients have been migrated to database-managed keys. Configure gateway request-size, rolling rate-limit and quota values for expected traffic. The dashboard uses `COGNISENSE_DEFAULT_DAILY_QUOTA`, plan fields, `COGNISENSE_RATE_LIMIT_REQUESTS`, and `COGNISENSE_RATE_LIMIT_WINDOW_SECONDS` from the gateway configuration.
+
+Monitor process health, PostgreSQL connectivity/connection pool saturation, migration status, HTTP 5xx/429 rates, and disk/storage growth using the hosting platform's existing monitoring and alerting. Usage rows are retained by the existing schema without an automatic retention job; define and review a retention policy before production growth makes the table unbounded. Expired/revoked sessions and login-attempt rows likewise need a scheduled, operationally reviewed cleanup policy. Gateway admission and usage-write failures intentionally fail closed with `503`; no usage-store outage should be treated as permission to bypass API-key checks or limits. Use HTTPS, database backups, secret rotation, least-privilege database credentials, and a dedicated `TEST_DATABASE_URL` whose database name includes `test` for migration integration testing. Never run destructive migration tests against development or production databases.
+
+Portal route tests use an isolated in-memory SQLite fixture. PostgreSQL-specific migrations, row-locking concurrency, production worker behavior, reverse-proxy configuration, backup restoration, monitoring alerts, and retention jobs require separate deployment-level validation; unit tests do not certify production readiness.
 
 Use `analyzeFiles(files, { text })` for file-only or mixed uploads. `analyzeText(text)` sends JSON; file requests use multipart form data, with the boundary generated by `fetch`. Empty input, unsupported extensions, malformed file objects, and more than five files are rejected before making a request.
 

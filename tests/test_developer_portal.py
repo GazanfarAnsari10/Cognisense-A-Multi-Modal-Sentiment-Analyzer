@@ -83,6 +83,11 @@ class DeveloperPortalTests(unittest.TestCase):
         self.assertEqual(anonymous.get("/api/v1/projects").status_code, 401)
         self.assertEqual(anonymous.get("/text").status_code, 200)
         self.assertIn("Developer workspace", anonymous.get("/developer").get_data(as_text=True))
+        dashboard = self.client.get("/developer/dashboard")
+        dashboard_html = dashboard.get_data(as_text=True)
+        self.assertIn('href="/developer/dashboard" aria-label="Cognisense developer dashboard overview"', dashboard_html)
+        self.assertIn('id="sidebar-collapse"', dashboard_html)
+        self.assertIn('aria-controls="dashboard-navigation"', dashboard_html)
 
     def test_dashboard_reads_only_owner_usage_and_plan_limits(self):
         with self.session_factory.begin() as session:

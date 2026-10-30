@@ -76,13 +76,51 @@
         message.className = 'form-message';
       }
 
+      function showError(text, invalidField) {
+        message.textContent = text;
+        message.className = 'form-message error';
+        if (invalidField) {
+          invalidField.setAttribute('aria-invalid', 'true');
+          invalidField.focus();
+        }
+      }
+
+      function validateForm() {
+        for (const field of [nameInput, form.email, password]) {
+          field.removeAttribute('aria-invalid');
+        }
+        if (mode === 'register' && !nameInput.value.trim()) {
+          showError('Enter your name to create an account.', nameInput);
+          return false;
+        }
+        const email = form.email.value.trim();
+        if (!email) {
+          showError('Enter your email address.', form.email);
+          return false;
+        }
+        form.email.value = email;
+        if (!form.email.validity.valid) {
+          showError('Enter a valid email address, such as name@example.com.', form.email);
+          return false;
+        }
+        if (!password.value) {
+          showError('Enter your password.', password);
+          return false;
+        }
+        if (mode === 'register' && (password.value.length < 12 || password.value.length > 128)) {
+          showError('Your password must be between 12 and 128 characters.', password);
+          return false;
+        }
+        return true;
+      }
+
       document.querySelectorAll('.auth-tab').forEach(tab => tab.addEventListener('click', () => setMode(tab.dataset.mode)));
       form.addEventListener('submit', async event => {
         event.preventDefault();
         message.textContent = '';
-        if (!form.reportValidity()) return;
+        if (!validateForm()) return;
         button.disabled = true;
-        button.textContent = mode === 'register' ? 'Creating account…' : 'Signing in…';
+        button.textContent = mode === 'register' ? 'Creating account...' : 'Signing in...';
         try {
           const csrfResponse = await fetch('/api/v1/auth/csrf', { credentials: 'same-origin', cache: 'no-store' });
           const csrfPayload = await csrfResponse.json();
@@ -112,10 +150,16 @@
           }
           window.location.replace({{ next_url|tojson }});
         } catch (error) {
-          message.textContent = error.message || 'A connection error occurred. Please try again.';
-          message.classList.add('error');
+          showError(error.message || 'A connection error occurred. Please try again.');
           button.disabled = false;
-          setMode(mode);
+          button.innerHTML = mode === 'register' ? 'Create account <span aria-hidden="true">&rarr;</span>' : 'Sign in <span aria-hidden="true">&rarr;</span>';
+        }
+      });
+      form.addEventListener('input', event => {
+        event.target.removeAttribute('aria-invalid');
+        if (message.classList.contains('error')) {
+          message.textContent = '';
+          message.className = 'form-message';
         }
       });
     })();

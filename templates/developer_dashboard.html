@@ -13,22 +13,25 @@
 <body class="dev-body dashboard-body">
   <div class="dashboard-shell" id="dashboard-shell">
     <aside class="dev-sidebar">
-      <a class="dev-brand" href="/" aria-label="Cognisense home"><span class="brand-mark">C</span><span>COGNISENSE <small>DEVELOPER</small></span></a>
-      <nav class="dashboard-nav" aria-label="Developer dashboard">
-        <button type="button" class="dash-nav-item active" data-view="overview"><span aria-hidden="true">◫</span> Overview</button>
-        <button type="button" class="dash-nav-item" data-view="projects"><span aria-hidden="true">▦</span> Projects</button>
-        <button type="button" class="dash-nav-item" data-view="keys"><span aria-hidden="true">⌘</span> API keys</button>
-        <button type="button" class="dash-nav-item" data-view="usage"><span aria-hidden="true">▤</span> Usage</button>
-        <button type="button" class="dash-nav-item" data-view="account"><span aria-hidden="true">◉</span> Account</button>
+      <div class="sidebar-brand-row">
+        <a class="dev-brand" href="/developer/dashboard" aria-label="Cognisense developer dashboard overview" title="Overview"><span class="brand-mark">C</span><span class="brand-copy">COGNISENSE <small>DEVELOPER</small></span></a>
+        <button class="sidebar-collapse" id="sidebar-collapse" type="button" aria-label="Collapse sidebar" aria-expanded="true" aria-controls="dashboard-navigation" title="Collapse sidebar"><span aria-hidden="true">‹</span></button>
+      </div>
+      <nav class="dashboard-nav" id="dashboard-navigation" aria-label="Developer dashboard">
+        <button type="button" class="dash-nav-item active" data-view="overview" title="Overview" aria-label="Overview"><span aria-hidden="true">◫</span><span class="nav-label">Overview</span></button>
+        <button type="button" class="dash-nav-item" data-view="projects" title="Projects" aria-label="Projects"><span aria-hidden="true">▦</span><span class="nav-label">Projects</span></button>
+        <button type="button" class="dash-nav-item" data-view="keys" title="API keys" aria-label="API keys"><span aria-hidden="true">⌘</span><span class="nav-label">API keys</span></button>
+        <button type="button" class="dash-nav-item" data-view="usage" title="Usage" aria-label="Usage"><span aria-hidden="true">▤</span><span class="nav-label">Usage</span></button>
+        <button type="button" class="dash-nav-item" data-view="account" title="Account" aria-label="Account"><span aria-hidden="true">◉</span><span class="nav-label">Account</span></button>
       </nav>
       <div class="sidebar-bottom">
-        <a class="home-link" href="/">← Back to Cognisense</a>
-        <button class="logout-button" id="logout-button" type="button">Sign out</button>
+        <a class="home-link" href="/" title="Back to Cognisense" aria-label="Back to Cognisense"><span class="sidebar-action-icon" aria-hidden="true">⌂</span><span class="sidebar-link-label">Back to Cognisense</span></a>
+        <button class="logout-button" id="logout-button" type="button" title="Sign out" aria-label="Sign out"><span class="sidebar-action-icon" aria-hidden="true">↪</span><span class="sidebar-link-label">Sign out</span></button>
       </div>
     </aside>
     <main class="dashboard-main">
       <header class="dashboard-header">
-        <div class="dashboard-title-group"><a class="header-home" href="/">&larr; Home</a><div><p class="eyebrow">Developer workspace</p><h1 id="view-title">Overview</h1></div></div>
+        <div><p class="eyebrow">Developer workspace</p><h1 id="view-title">Overview</h1></div>
         <div class="account-chip"><span class="avatar">{{ user.name[:1]|upper }}</span><span>{{ user.name }}</span></div>
       </header>
       <p class="global-message" id="global-message" role="status" aria-live="polite"></p>

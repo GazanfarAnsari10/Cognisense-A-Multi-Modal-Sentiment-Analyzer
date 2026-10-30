@@ -135,6 +135,13 @@
 
   document.querySelectorAll('.dash-nav-item').forEach(button => button.addEventListener('click', () => setView(button.dataset.view)));
   document.querySelectorAll('[data-go]').forEach(button => button.addEventListener('click', () => setView(button.dataset.go)));
+  $('#sidebar-collapse').addEventListener('click', event => {
+    const collapsed = $('#dashboard-shell').classList.toggle('sidebar-collapsed');
+    const control = event.currentTarget;
+    control.setAttribute('aria-expanded', String(!collapsed));
+    control.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
+    control.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  });
   $('#key-project').addEventListener('change', loadKeys);
 
   $('#project-form').addEventListener('submit', async event => {

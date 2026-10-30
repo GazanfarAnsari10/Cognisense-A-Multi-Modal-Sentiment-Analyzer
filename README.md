@@ -230,6 +230,44 @@ Run isolated key-management tests with:
 python -m unittest tests.test_api_keys -v
 ```
 
+## Phase 7A admin foundation and security
+
+Users have a server-controlled `role` (`user` by default, or `admin`). Registration ignores role fields, and the database enforces the supported role values. The protected `/admin` page redirects unauthenticated visitors to the existing developer login flow and returns `403` for signed-in non-admin users. `/api/v1/admin` and `/api/v1/admin/audit` return `401` or `403` as appropriate. These endpoints require the existing active server-side session; role changes are read from the database on each request.
+
+### Migration and initial admin
+
+Apply the additive migration to the configured database:
+
+```powershell
+alembic upgrade head
+```
+
+Register the intended account through the existing flow, then explicitly enable and run the one-time promotion command from the project root. Provide a non-secret operator identifier for the audit record. Promotion requires that the account already exists, is active, has a password hash, and that no admin has previously been provisioned. The command does not create accounts or accept passwords.
+
+```powershell
+$env:COGNISENSE_ALLOW_ADMIN_PROVISIONING = '1'
+python admin_provision.py --email 'admin@example.com' --confirm-email 'admin@example.com' --actor 'operator-name-or-ticket'
+Remove-Item Env:COGNISENSE_ALLOW_ADMIN_PROVISIONING
+```
+
+The enable flag is required for every invocation and the exact account email must be repeated. The command is intentionally one-time; there is no public admin-registration or role-change endpoint. Never put passwords, session cookies, API-key secrets, or authentication tokens in command arguments or audit fields.
+
+Administrative access attempts and successful initial provisioning are recorded in `audit_logs` with actor, action, target, timestamp, and outcome. The audit API is admin-only and returns at most the latest 100 records. Audit entries contain no request bodies or analysis content. Keep database access restricted and include this table in normal database backup and retention controls.
+
+### Run and verify
+
+Set `AUTH_SECRET_KEY` and `DATABASE_URL` as described above, then run:
+
+```powershell
+python app.py
+python -m unittest tests.test_admin_portal tests.test_auth tests.test_developer_portal -v
+python -m unittest tests.test_database_setup -v
+```
+
+After provisioning and logging in as the admin, `GET http://localhost:5000/admin` should return `200`, and `GET http://localhost:5000/api/v1/admin` should return `200`. A signed-in regular user receives `403` from both admin endpoints; an unauthenticated browser is redirected from `/admin`, while the API returns `401`. The audit endpoint is protected by the same checks.
+
+This phase provides authorization and audit foundations only. It does not provide user/plan/analytics management, admin role revocation, tamper-evident or external audit storage, MFA, or deployment-level operator identity verification. Restrict direct database and CLI access to trusted operators; the CLI's `--actor` value is an operator-supplied audit label, not a separately authenticated identity.
+
 ## Phase 6A database foundation
 
 This repository now includes the initial PostgreSQL foundation for the multi-user platform planned in later phases. The implementation is intentionally isolated from the current gateway so the existing credentials-based API behavior remains unchanged.

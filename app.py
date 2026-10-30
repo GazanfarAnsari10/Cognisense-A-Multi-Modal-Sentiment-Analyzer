@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, jsonify
 from auth import auth_blueprint
 from projects import projects_blueprint
 from developer_portal import developer_blueprint
+from admin_portal import admin_blueprint
 from analyzers.text_analyzer import analyze_text_from_string
 from analyzers.audio_analyzer import analyze_audio_file
 from analyzers.video_analyzer import analyze_video_file
@@ -40,6 +41,7 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.register_blueprint(auth_blueprint)
 app.register_blueprint(projects_blueprint)
 app.register_blueprint(developer_blueprint)
+app.register_blueprint(admin_blueprint)
 
 @app.route("/")
 def index():

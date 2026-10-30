@@ -9,7 +9,7 @@ from alembic import command
 from alembic.config import Config
 
 from database.config import get_database_settings, get_database_url
-from database.models import ApiKey, Base, Plan, Project, UsageRecord, User
+from database.models import ApiKey, AuditLog, Base, Plan, Project, UsageRecord, User
 
 
 class DatabaseConfigTests(unittest.TestCase):
@@ -43,14 +43,21 @@ class DatabaseConfigTests(unittest.TestCase):
 class DatabaseModelTests(unittest.TestCase):
     def test_metadata_contains_expected_tables_and_relationships(self):
         tables = {table.name for table in Base.metadata.sorted_tables}
-        self.assertTrue({"users", "projects", "api_keys", "usage_records", "plans"}.issubset(tables))
+        self.assertTrue({"users", "projects", "api_keys", "usage_records", "plans", "audit_logs"}.issubset(tables))
 
         users_table = Base.metadata.tables["users"]
+        audit_logs_table = Base.metadata.tables["audit_logs"]
         projects_table = Base.metadata.tables["projects"]
         api_keys_table = Base.metadata.tables["api_keys"]
         usage_records_table = Base.metadata.tables["usage_records"]
 
         self.assertIn("email", users_table.columns)
+        self.assertEqual(users_table.columns["role"].default.arg, "user")
+        self.assertIn("actor_identifier", audit_logs_table.columns)
+        self.assertIn("action", audit_logs_table.columns)
+        self.assertIn("target_identifier", audit_logs_table.columns)
+        self.assertIn("occurred_at", audit_logs_table.columns)
+        self.assertIn("outcome", audit_logs_table.columns)
         self.assertTrue(users_table.columns["email"].unique)
         self.assertIn("owner_user_id", projects_table.columns)
         self.assertIn("public_project_id", projects_table.columns)
@@ -67,6 +74,7 @@ class DatabaseModelTests(unittest.TestCase):
         self.assertEqual(ApiKey.__tablename__, "api_keys")
         self.assertEqual(UsageRecord.__tablename__, "usage_records")
         self.assertEqual(Plan.__tablename__, "plans")
+        self.assertEqual(AuditLog.__tablename__, "audit_logs")
 
 
 @unittest.skipUnless(os.getenv("TEST_DATABASE_URL"), "A dedicated PostgreSQL TEST_DATABASE_URL is required to exercise Alembic migrations.")
@@ -90,6 +98,7 @@ class DatabaseMigrationTests(unittest.TestCase):
             with patch.dict(os.environ, {"DATABASE_URL": url}):
                 command.upgrade(config, "head")
             inspector = inspect(engine)
-            self.assertTrue({"users", "projects", "api_keys", "usage_records", "plans"}.issubset(inspector.get_table_names()))
+            self.assertTrue({"users", "projects", "api_keys", "usage_records", "plans", "audit_logs"}.issubset(inspector.get_table_names()))
+            self.assertIn("role", {column["name"] for column in inspector.get_columns("users")})
         finally:
             engine.dispose()

@@ -63,7 +63,7 @@
       <div><div class="project-name">${escapeHtml(project.name)}</div><div class="project-id">${escapeHtml(project.project_id)}</div></div>
       <span class="status-pill ${project.status === 'active' ? '' : 'archived'}">${escapeHtml(project.status)}</span>
       <span class="muted-text">${escapeHtml(project.created_at ? new Date(project.created_at).toLocaleDateString() : '')}</span>
-      <div class="row-actions">${project.status === 'active' ? `<button class="small-button" data-rename="${escapeHtml(project.project_id)}">Rename</button><button class="small-button" data-keys="${escapeHtml(project.project_id)}">Keys &amp; usage</button><button class="small-button danger" data-archive="${escapeHtml(project.project_id)}">Archive</button>` : ''}</div>
+      <div class="row-actions">${project.status === 'active' ? `<button class="small-button" data-rename="${escapeHtml(project.project_id)}">Rename</button><button class="small-button" data-keys="${escapeHtml(project.project_id)}">Keys &amp; usage</button><button class="small-button danger" data-archive="${escapeHtml(project.project_id)}">Archive</button>` : ''}${project.status !== 'deleted' ? `<button class="small-button danger" data-delete="${escapeHtml(project.project_id)}">Delete</button>` : ''}</div>
     </article>`).join('');
     $('#project-list').innerHTML = rows || '<div class="empty-state"><strong>No projects yet</strong>Create a project to issue your first API key.</div>';
     $('#project-overview').innerHTML = active.length ? active.slice(0, 4).map(project => {
@@ -82,8 +82,8 @@
       const limited = project.quota_limit !== null;
       const ratio = limited ? Math.min(100, project.quota_used / project.quota_limit * 100) : 0;
       const quotaText = limited ? `${project.quota_used} / ${project.quota_limit} requests` : `${project.quota_used} requests; no daily quota configured`;
-      const planLimit = project.plan_rate_limit ? ` · Plan ${escapeHtml(project.plan_rate_count)} / ${escapeHtml(project.plan_rate_limit)} per 60s` : '';
-      return `<article class="usage-row"><div><div class="project-name">${escapeHtml(project.name)}</div><div class="muted-text">${escapeHtml(project.plan || 'Default configuration')}</div></div><div><strong>${escapeHtml(quotaText)}</strong>${limited ? `<div class="usage-meter" role="meter" aria-label="Daily quota used" aria-valuenow="${Math.min(project.quota_used, project.quota_limit)}" aria-valuemin="0" aria-valuemax="${project.quota_limit}"><span style="width:${ratio}%"></span></div>` : ''}</div><div class="muted-text">Rate: ${escapeHtml(project.rate_count)} / ${escapeHtml(project.rate_limit)} per ${escapeHtml(project.rate_window_seconds)}s${planLimit} · ${escapeHtml(project.limit_responses_24h)} HTTP 429 limit responses / 24h</div></article>`;
+      const rateText = project.rate_limit === null ? `${project.rate_count} requests / ${project.rate_window_seconds}s; unlimited` : `${project.rate_count} / ${project.rate_limit} requests per ${project.rate_window_seconds}s`;
+      return `<article class="usage-row"><div><div class="project-name">${escapeHtml(project.name)}</div><div class="muted-text">${escapeHtml(project.plan || 'Platform defaults')}</div></div><div><strong>${escapeHtml(quotaText)}</strong>${limited ? `<div class="usage-meter" role="meter" aria-label="Daily quota used" aria-valuenow="${Math.min(project.quota_used, project.quota_limit)}" aria-valuemin="0" aria-valuemax="${project.quota_limit}"><span style="width:${ratio}%"></span></div>` : ''}</div><div class="muted-text">${escapeHtml(rateText)} · ${escapeHtml(project.max_active_projects ?? 'Unlimited')} active projects per plan · ${escapeHtml(project.limit_responses_24h)} HTTP 429 limit responses / 24h</div></article>`;
     }).join('') : '<div class="empty-state"><strong>No usage data yet</strong>Usage is unavailable until you create a project and make requests.</div>';
   }
 
@@ -98,7 +98,8 @@
         <h3>${escapeHtml(plan.name)}</h3><p>${escapeHtml(plan.description || 'No description provided.')}</p>
         <dl><div><dt>Requests per minute</dt><dd>${planLimit(plan.request_limit_per_minute, 'requests/minute')}</dd></div>
         <div><dt>Daily quota</dt><dd>${planLimit(plan.quota_limit_per_day, 'requests/day')}</dd></div>
-        <div><dt>Active API keys</dt><dd>${planLimit(plan.active_api_key_limit, 'keys')}</dd></div></dl>
+        <div><dt>Active API keys</dt><dd>${planLimit(plan.active_api_key_limit, 'keys')}</dd></div>
+        <div><dt>Active projects</dt><dd>${planLimit(plan.max_active_projects, 'projects')}</dd></div></dl>
       </article>`).join('') : '<div class="empty-state"><strong>No plans are available</strong>Ask your administrator to publish a plan for customer selection.</div>';
       $('#plan-assignments').innerHTML = data.projects.length ? `<table><thead><tr><th>Project</th><th>Current plan</th><th>Select plan</th></tr></thead><tbody>${data.projects.map(project => {
         const current = project.current_plan;
@@ -195,6 +196,7 @@
     }
     const rename = event.target.closest('[data-rename]');
     const archive = event.target.closest('[data-archive]');
+    const deleteProject = event.target.closest('[data-delete]');
     const keys = event.target.closest('[data-keys]');
     const revoke = event.target.closest('[data-revoke]');
     try {
@@ -209,6 +211,11 @@
         if (!window.confirm('Archive this project? Its API keys will stop working.')) return;
         await mutate(`/api/v1/projects/${encodeURIComponent(archive.dataset.archive)}`, 'DELETE');
         showMessage('Project archived.');
+        await loadDashboard();
+      } else if (deleteProject) {
+        if (!window.confirm('Permanently remove this project from normal access? API keys will be revoked and usage history retained. This cannot be undone.')) return;
+        await mutate(`/api/v1/projects/${encodeURIComponent(deleteProject.dataset.delete)}/delete`, 'DELETE');
+        showMessage('Project deleted and API keys revoked. Usage history was retained.');
         await loadDashboard();
       } else if (keys) {
         state.selectedProject = keys.dataset.keys;

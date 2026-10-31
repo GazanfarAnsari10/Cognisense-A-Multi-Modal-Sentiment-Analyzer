@@ -1,12 +1,15 @@
 import hashlib
 import os
+import tempfile
+import threading
 import unittest
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from flask import Flask
-from sqlalchemy import create_engine, event, select
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -134,6 +137,78 @@ class ProjectApiTests(unittest.TestCase):
         self.assertEqual(limited.status_code, 409)
         self.assertEqual(limited.get_json()["error"]["code"], "project_limit_reached")
 
+    def test_default_plan_project_cap_is_enforced_and_archived_projects_do_not_count(self):
+        with self.session_factory.begin() as session:
+            plan = Plan(name="Single project", max_active_projects=1, is_default=True)
+            session.add(plan)
+        first = self._post_project("First")
+        second = self._post_project("Second")
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 409)
+        self.assertIn("up to 1 active projects", second.get_json()["error"]["message"])
+        first_id = first.get_json()["data"]["project"]["project_id"]
+        archived = self.client.delete(
+            f"/api/v1/projects/{first_id}", headers={"X-CSRF-Token": self.csrf_token}
+        )
+        self.assertEqual(archived.status_code, 200)
+        self.assertEqual(self._post_project("After archive").status_code, 201)
+
+    def test_plan_active_key_limit_is_authoritative_over_environment_default(self):
+        with self.session_factory.begin() as session:
+            session.add(Plan(name="Two keys", active_api_key_limit=2, is_default=True))
+        project_id = self._post_project().get_json()["data"]["project"]["project_id"]
+        with patch.dict(os.environ, {"COGNISENSE_MAX_ACTIVE_KEYS_PER_PROJECT": "1"}):
+            first = self.client.post(
+                f"/api/v1/projects/{project_id}/keys", json={},
+                headers={"X-CSRF-Token": self.csrf_token},
+            )
+            second = self.client.post(
+                f"/api/v1/projects/{project_id}/keys", json={},
+                headers={"X-CSRF-Token": self.csrf_token},
+            )
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 201)
+
+    def test_concurrent_project_creation_cannot_exceed_plan_cap(self):
+        temporary_database = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary_database.cleanup)
+        engine = create_engine(
+            f"sqlite+pysqlite:///{temporary_database.name}/projects.db",
+            connect_args={"check_same_thread": False, "timeout": 10},
+        )
+        Base.metadata.create_all(engine)
+        factory = sessionmaker(bind=engine, expire_on_commit=False)
+        self.addCleanup(engine.dispose)
+        session_cookie = self.client.get_cookie("cognisense_session").value
+        with factory.begin() as session:
+            user = User(name="Concurrent Owner", email="concurrent-project-owner@example.com")
+            session.add(user)
+            session.flush()
+            session.add(AuthSession(
+                user_id=user.id,
+                token_hash=hashlib.sha256(session_cookie.encode()).hexdigest(),
+                csrf_token_hash=_csrf_hash(self.csrf_token),
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            ))
+            session.add(Plan(name="Concurrent cap", max_active_projects=1, is_default=True))
+        self.app.config["DATABASE_SESSION_FACTORY"] = factory
+        barrier = threading.Barrier(2)
+
+        def create(name):
+            client = self.app.test_client()
+            client.set_cookie("cognisense_session", session_cookie)
+            client.set_cookie("cognisense_csrf", self.csrf_token)
+            barrier.wait(timeout=5)
+            response = client.post(
+                "/api/v1/projects", json={"name": name},
+                headers={"X-CSRF-Token": self.csrf_token},
+            )
+            return response.status_code
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            statuses = sorted(executor.map(create, ("Concurrent One", "Concurrent Two")))
+        self.assertEqual(statuses, [201, 409])
+
     def test_unauthenticated_requests_are_rejected(self):
         anonymous = self.app.test_client()
         self.assertEqual(anonymous.get("/api/v1/projects").status_code, 401)
@@ -215,6 +290,7 @@ class ProjectApiTests(unittest.TestCase):
         catalog = self.client.get("/api/v1/projects/plans")
         self.assertEqual(catalog.status_code, 200)
         self.assertEqual([item["name"] for item in catalog.get_json()["data"]["plans"]], ["Customer Starter"])
+        self.assertIn("max_active_projects", catalog.get_json()["data"]["plans"][0])
         self.assertIsNone(catalog.get_json()["data"]["projects"][0]["current_plan"])
         self.assertEqual(self.app.test_client().get("/api/v1/projects/plans").status_code, 401)
         self.assertEqual(
@@ -308,6 +384,32 @@ class ProjectApiTests(unittest.TestCase):
             self.assertEqual(project.status, "archived")
             self.assertEqual(len(project.api_keys), 1)
             self.assertEqual(len(project.usage_records), 1)
+
+    def test_delete_tombstones_project_revokes_keys_and_preserves_usage(self):
+        project_id = self._post_project().get_json()["data"]["project"]["project_id"]
+        with self.session_factory.begin() as session:
+            project = session.scalar(select(Project).where(Project.public_project_id == project_id))
+            key = ApiKey(project_id=project.id, key_prefix="delete-test-prefix", key_hash="stored-hash")
+            session.add(key)
+            session.flush()
+            key_id = key.id
+            session.add(UsageRecord(
+                project_id=project.id, api_key_id=key.id, endpoint="/api/v1/analyze",
+                http_status_code=200, processing_duration_ms=1,
+            ))
+        deleted = self.client.delete(
+            f"/api/v1/projects/{project_id}/delete", headers={"X-CSRF-Token": self.csrf_token}
+        )
+        self.assertEqual(deleted.status_code, 200)
+        self.assertEqual(deleted.get_json()["data"]["project"]["status"], "deleted")
+        self.assertEqual(self.client.get("/api/v1/projects").get_json()["data"]["projects"], [])
+        with self.session_factory() as session:
+            project = session.scalar(select(Project).where(Project.public_project_id == project_id))
+            self.assertEqual(project.status, "deleted")
+            self.assertEqual(session.get(ApiKey, key_id).status, "revoked")
+            self.assertIsNotNone(session.get(ApiKey, key_id).revoked_at)
+            self.assertEqual(session.scalar(select(func.count(UsageRecord.id))), 1)
+            self.assertEqual(session.scalar(select(AuditLog.action).where(AuditLog.action == "project.deleted")), "project.deleted")
 
     def test_public_id_collision_is_retried_and_never_reassigned(self):
         existing = self._post_project("Existing")

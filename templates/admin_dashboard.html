@@ -62,10 +62,11 @@
                     <label>Requests per minute<input id="plan-rpm" type="number" min="0" max="1000000" required></label>
                     <label>Daily quota<input id="plan-quota" type="number" min="0" max="1000000" required></label>
                     <label>Active API key limit<input id="plan-keys" type="number" min="0" max="1000000" required></label>
+                    <label>Maximum active projects<input id="plan-projects" type="number" min="0" max="1000000" value="0" required></label>
                     <label class="check-label"><input id="plan-default" type="checkbox"> Default plan</label>
                     <label class="check-label"><input id="plan-selectable" type="checkbox"> Available for customer selection</label>
                     <div class="row-actions"><button class="button-primary" type="submit" id="plan-save">Create plan</button><button class="button-secondary" type="button" id="plan-reset">Clear</button></div>
-                    <p class="muted-text">Zero means no plan-specific ceiling. Platform environment limits remain upper bounds.</p>
+                    <p class="muted-text">Requests per minute use a 60-second window. Zero means unlimited. Platform environment defaults apply only when no plan is configured.</p>
                 </form>
                 <div class="table-wrap" id="plans-table"></div>
             </section>

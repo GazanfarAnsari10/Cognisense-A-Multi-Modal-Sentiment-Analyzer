@@ -54,6 +54,7 @@ class Plan(Base):
     request_limit_per_minute: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     quota_limit_per_day: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     active_api_key_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_active_projects: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     is_default: Mapped[bool] = mapped_column(nullable=False, default=False)
     is_selectable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     created_at: Mapped[datetime] = mapped_column(

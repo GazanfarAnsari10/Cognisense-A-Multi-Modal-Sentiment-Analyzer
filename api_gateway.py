@@ -304,13 +304,6 @@ def _usage_count(session, project_id: int, since: datetime):
 
 
 def _reserve_usage(principal: AuthenticatedProject) -> int:
-    rate_limit = _positive_setting("COGNISENSE_RATE_LIMIT_REQUESTS", 60)
-    rate_window = _positive_setting("COGNISENSE_RATE_LIMIT_WINDOW_SECONDS", 60)
-    default_daily_quota = _positive_setting(
-        "COGNISENSE_DEFAULT_DAILY_QUOTA",
-        0,
-        allow_zero=True,
-    )
     now = datetime.now(timezone.utc)
     rejection: tuple[int, str] | None = None
     reservation_id: int | None = None
@@ -331,38 +324,35 @@ def _reserve_usage(principal: AuthenticatedProject) -> int:
                     .values(updated_at=Project.updated_at)
                 )
 
-            env_count, env_oldest = _usage_count(
-                session,
-                project.id,
-                now - timedelta(seconds=rate_window),
+            effective_plan = project.plan or session.scalar(
+                select(Plan).where(Plan.is_default.is_(True)).order_by(Plan.id).limit(1)
             )
-            if env_count >= rate_limit:
-                rejection = (
-                    _retry_after(env_oldest, rate_window, now),
-                    "The request limit has been reached. Try again later.",
+            if effective_plan is None:
+                rate_limit = _positive_setting("COGNISENSE_RATE_LIMIT_REQUESTS", 60)
+                rate_window = _positive_setting("COGNISENSE_RATE_LIMIT_WINDOW_SECONDS", 60)
+                effective_quota = _positive_setting(
+                    "COGNISENSE_DEFAULT_DAILY_QUOTA", 0, allow_zero=True
                 )
-            effective_plan = project.plan or session.scalar(select(Plan).where(Plan.is_default.is_(True)).order_by(Plan.id).limit(1))
-            if rejection is None and effective_plan is not None and effective_plan.request_limit_per_minute > 0:
-                plan_count, plan_oldest = _usage_count(
-                    session,
-                    project.id,
-                    now - timedelta(minutes=1),
+            else:
+                limits = (
+                    effective_plan.request_limit_per_minute,
+                    effective_plan.quota_limit_per_day,
                 )
-                if plan_count >= effective_plan.request_limit_per_minute:
+                if any(not isinstance(value, int) or isinstance(value, bool) or value < 0 for value in limits):
+                    raise ValueError("Stored plan limits are invalid.")
+                rate_limit = effective_plan.request_limit_per_minute
+                rate_window = 60
+                effective_quota = effective_plan.quota_limit_per_day
+
+            if rate_limit > 0:
+                rate_count, rate_oldest = _usage_count(
+                    session, project.id, now - timedelta(seconds=rate_window)
+                )
+                if rate_count >= rate_limit:
                     rejection = (
-                        _retry_after(plan_oldest, 60, now),
+                        _retry_after(rate_oldest, rate_window, now),
                         "The request limit has been reached. Try again later.",
                     )
-
-            quota_limits = [
-                limit
-                for limit in (
-                    default_daily_quota,
-                    effective_plan.quota_limit_per_day if effective_plan is not None else 0,
-                )
-                if limit > 0
-            ]
-            effective_quota = min(quota_limits) if quota_limits else 0
             quota_oldest: datetime | None = None
             if rejection is None and effective_quota:
                 quota_count, quota_oldest = _usage_count(

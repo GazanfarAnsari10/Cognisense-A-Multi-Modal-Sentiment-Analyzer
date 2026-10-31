@@ -252,7 +252,7 @@ def user_detail(user_id: int):
             user = session.get(User, user_id)
             if user is None:
                 return _error("not_found", "User not found.", 404)
-            projects = session.scalars(select(Project).where(Project.owner_user_id == user.id).order_by(Project.id).limit(MAX_PAGE_SIZE)).all()
+            projects = session.scalars(select(Project).where(Project.owner_user_id == user.id, Project.status != "deleted").order_by(Project.id).limit(MAX_PAGE_SIZE)).all()
             return _no_store(make_response(jsonify(success=True, data={"user": {
                 "id": user.id, "name": user.name, "email": user.email, "status": user.status,
                 "role": user.role, "created_at": _timestamp(user.created_at), "updated_at": _timestamp(user.updated_at),
@@ -300,10 +300,12 @@ def projects():
             if pagination is None:
                 return _error("invalid_request", "Pagination values are outside supported limits.", 400)
             page, page_size = pagination
-            total = session.scalar(select(func.count(Project.id))) or 0
+            visible_projects = Project.status != "deleted"
+            total = session.scalar(select(func.count(Project.id)).where(visible_projects)) or 0
             rows = session.execute(select(Project, User.name, User.email, Plan.name)
                                    .join(User, User.id == Project.owner_user_id)
                                    .outerjoin(Plan, Plan.id == Project.plan_id)
+                                   .where(visible_projects)
                                    .order_by(Project.created_at.desc(), Project.id.desc())
                                    .offset((page - 1) * page_size).limit(page_size)).all()
             output = []
@@ -349,17 +351,43 @@ def update_project(project_id: int):
         return _database_failure("Admin project could not be changed.")
 
 
+@admin_blueprint.delete("/api/v1/admin/projects/<int:project_id>")
+def delete_admin_project(project_id: int):
+    try:
+        with _session_factory()() as session, session.begin():
+            auth_session, failure = _admin_context(session, mutation=True)
+            if failure:
+                return failure
+            project = session.scalar(select(Project).where(Project.id == project_id).with_for_update())
+            if project is None:
+                return _error("not_found", "Project not found.", 404)
+            if project.status == "deleted":
+                return _error("project_deleted", "Project has already been deleted.", 409)
+            now = datetime.now(timezone.utc)
+            project.status = "deleted"
+            project.updated_at = now
+            for api_key in session.scalars(select(ApiKey).where(ApiKey.project_id == project.id)).all():
+                _revoke_api_key_record(api_key, now)
+            _record_action(session, auth_session, "admin.project.deleted", "project", project.public_project_id)
+            return _no_store(make_response(jsonify(success=True, data={
+                "project_id": project.id, "status": project.status,
+            })))
+    except (SQLAlchemyError, RuntimeError, ValueError):
+        return _database_failure("Admin project could not be deleted.")
+
+
 def _serialize_plan(plan: Plan):
     return {"id": plan.id, "name": plan.name, "description": plan.description,
             "request_limit_per_minute": plan.request_limit_per_minute,
             "quota_limit_per_day": plan.quota_limit_per_day,
-            "active_api_key_limit": plan.active_api_key_limit, "is_default": plan.is_default,
+            "active_api_key_limit": plan.active_api_key_limit,
+            "max_active_projects": plan.max_active_projects, "is_default": plan.is_default,
             "is_selectable": plan.is_selectable,
             "created_at": _timestamp(plan.created_at), "updated_at": _timestamp(plan.updated_at)}
 
 
 def _plan_payload(payload, existing: Plan | None = None):
-    allowed = {"name", "description", "request_limit_per_minute", "quota_limit_per_day", "active_api_key_limit", "is_default", "is_selectable"}
+    allowed = {"name", "description", "request_limit_per_minute", "quota_limit_per_day", "active_api_key_limit", "max_active_projects", "is_default", "is_selectable"}
     if not isinstance(payload, dict) or not payload or set(payload) - allowed:
         return None
     values = {}
@@ -367,7 +395,7 @@ def _plan_payload(payload, existing: Plan | None = None):
         if field not in payload:
             continue
         value = payload[field]
-        if field in {"request_limit_per_minute", "quota_limit_per_day", "active_api_key_limit"}:
+        if field in {"request_limit_per_minute", "quota_limit_per_day", "active_api_key_limit", "max_active_projects"}:
             if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= MAX_PLAN_LIMIT:
                 return None
         elif field == "is_default":

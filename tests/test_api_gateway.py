@@ -513,6 +513,35 @@ class FeedbackGatewayTests(unittest.TestCase):
         self.assertEqual(limited.status_code, 429)
         self.assertEqual(self.mock_analyzer.call_count, 1)
 
+    def test_plan_limits_override_conflicting_environment_defaults(self):
+        with self.session_factory.begin() as session:
+            plan = Plan(
+                name="Environment override test",
+                request_limit_per_minute=3,
+                quota_limit_per_day=3,
+            )
+            session.add(plan)
+            session.flush()
+            project = session.scalar(
+                select(Project).where(Project.public_project_id == self.project_id)
+            )
+            project.plan_id = plan.id
+        with patch.dict(os.environ, {
+            "COGNISENSE_RATE_LIMIT_REQUESTS": "1",
+            "COGNISENSE_DEFAULT_DAILY_QUOTA": "1",
+        }):
+            for _ in range(2):
+                reservation = api_gateway._reserve_usage(
+                    api_gateway.AuthenticatedProject(self.project_id, None)
+                )
+                api_gateway._finish_usage(reservation, 200, __import__("time").monotonic())
+        with self.session_factory() as session:
+            accepted = session.scalar(select(func.count(UsageRecord.id)).where(
+                UsageRecord.project_id == session.scalar(select(Project.id).where(Project.public_project_id == self.project_id)),
+                UsageRecord.http_status_code == 200,
+            ))
+        self.assertEqual(accepted, 2)
+
     def test_environment_daily_quota_can_limit_projects_without_plan(self):
         with patch.dict(os.environ, {"COGNISENSE_DEFAULT_DAILY_QUOTA": "1"}):
             first = self._analyze_with_key("replace-with-a-long-random-secret")

@@ -144,7 +144,6 @@ def _require_csrf(secret: str, settings: dict[str, Any], auth_session: AuthSessi
 @projects_blueprint.post("")
 def create_project():
     try:
-        limit = _project_limit()
         with _session_factory()() as session, session.begin():
             secret, context, failure = _resolve_request_session(session)
             if failure is not None:
@@ -161,10 +160,19 @@ def create_project():
             if name is None:
                 return _error("invalid_request", "Project name must be 1 to 100 valid characters.", 400)
 
+            if session.get_bind().dialect.name == "sqlite":
+                session.execute(
+                    update(User)
+                    .where(User.id == auth_session.user_id)
+                    .values(updated_at=User.updated_at)
+                )
             session.scalar(
                 select(User.id)
                 .where(User.id == auth_session.user_id)
                 .with_for_update()
+            )
+            default_plan = session.scalar(
+                select(Plan).where(Plan.is_default.is_(True)).order_by(Plan.id).limit(1)
             )
             active_count = session.scalar(
                 select(func.count(Project.id)).where(
@@ -172,8 +180,13 @@ def create_project():
                     Project.status == "active",
                 )
             )
-            if active_count >= limit:
-                return _error("project_limit_reached", "The project limit has been reached.", 409)
+            effective_limit = default_plan.max_active_projects if default_plan else _project_limit()
+            if effective_limit > 0 and active_count >= effective_limit:
+                return _error(
+                    "project_limit_reached",
+                    f"Your plan allows up to {effective_limit} active projects. Archive a project or select an eligible plan with a higher project limit.",
+                    409,
+                )
 
             project = None
             for attempt in range(MAX_PROJECT_ID_ATTEMPTS):
@@ -182,6 +195,7 @@ def create_project():
                     display_name=name,
                     public_project_id=str(uuid.uuid4()),
                     status="active",
+                    plan_id=default_plan.id if default_plan else None,
                 )
                 try:
                     with session.begin_nested():
@@ -213,7 +227,7 @@ def list_projects():
             _, auth_session = context
             projects = session.scalars(
                 select(Project)
-                .where(Project.owner_user_id == auth_session.user_id)
+                .where(Project.owner_user_id == auth_session.user_id, Project.status != "deleted")
                 .order_by(Project.created_at.desc(), Project.id.desc())
             ).all()
             return jsonify(
@@ -232,6 +246,7 @@ def _serialize_selectable_plan(plan: Plan) -> dict[str, Any]:
         "request_limit_per_minute": plan.request_limit_per_minute,
         "quota_limit_per_day": plan.quota_limit_per_day,
         "active_api_key_limit": plan.active_api_key_limit,
+        "max_active_projects": plan.max_active_projects,
     }
 
 
@@ -325,6 +340,18 @@ def assign_project_plan(project_id: str):
             )
             if plan is None:
                 return _error("invalid_request", "plan_id must identify an available plan.", 400)
+            active_count = session.scalar(
+                select(func.count(Project.id)).where(
+                    Project.owner_user_id == auth_session.user_id,
+                    Project.status == "active",
+                )
+            ) or 0
+            if plan.max_active_projects > 0 and active_count > plan.max_active_projects:
+                return _error(
+                    "project_limit_reached",
+                    f"This plan allows up to {plan.max_active_projects} active projects. Archive projects or select an eligible plan with a higher project limit.",
+                    409,
+                )
 
             project.plan_id = plan.id
             session.add(AuditLog(
@@ -349,6 +376,7 @@ def _owned_project(session, owner_user_id: int, public_project_id: str) -> Proje
         select(Project).where(
             Project.public_project_id == public_project_id,
             Project.owner_user_id == owner_user_id,
+            Project.status != "deleted",
         )
     )
 
@@ -387,7 +415,6 @@ def _revoke_api_key_record(api_key: ApiKey, now: datetime | None = None) -> ApiK
 @projects_blueprint.post("/<project_id>/keys")
 def create_api_key(project_id: str):
     try:
-        limit = _active_key_limit()
         with _session_factory()() as session, session.begin():
             secret, context, failure = _resolve_request_session(session)
             if failure is not None:
@@ -412,7 +439,9 @@ def create_api_key(project_id: str):
 
             effective_plan = project.plan or session.scalar(select(Plan).where(Plan.is_default.is_(True)).limit(1))
             plan_key_limit = effective_plan.active_api_key_limit if effective_plan is not None else 0
-            effective_key_limit = min(limit, plan_key_limit) if plan_key_limit > 0 else limit
+            effective_key_limit = (
+                plan_key_limit if plan_key_limit > 0 else None
+            ) if effective_plan is not None else _active_key_limit()
 
             if session.get_bind().dialect.name == "sqlite":
                 session.execute(
@@ -440,7 +469,7 @@ def create_api_key(project_id: str):
             active_count = session.scalar(
                 select(func.count(ApiKey.id)).where(*_active_key_conditions(project.id, now))
             )
-            if active_count >= effective_key_limit:
+            if effective_key_limit is not None and active_count >= effective_key_limit:
                 return _error("active_key_limit_reached", "The active API key limit has been reached.", 409)
 
             key_prefix = API_KEY_PREFIX + secrets.token_urlsafe(12)
@@ -610,8 +639,43 @@ def archive_project(project_id: str):
             project = _owned_project(session, auth_session.user_id, project_id)
             if project is None:
                 return _error("not_found", "Project not found.", 404)
+            if project.status != "active":
+                return _error("project_archived", "Only active projects can be archived.", 409)
             project.status = "archived"
             project.updated_at = datetime.now(timezone.utc)
+            return jsonify(success=True, data={"project": _serialize_project(project)})
+    except (SQLAlchemyError, RuntimeError, ValueError):
+        return _service_unavailable()
+
+
+@projects_blueprint.delete("/<project_id>/delete")
+def delete_project(project_id: str):
+    try:
+        with _session_factory()() as session, session.begin():
+            secret, context, failure = _resolve_request_session(session)
+            if failure is not None:
+                return failure
+            settings, auth_session = context
+            failure = _require_csrf(secret, settings, auth_session)
+            if failure is not None:
+                return failure
+            project = _owned_project(session, auth_session.user_id, project_id)
+            if project is None:
+                return _error("not_found", "Project not found.", 404)
+            now = datetime.now(timezone.utc)
+            project.status = "deleted"
+            project.updated_at = now
+            keys = session.scalars(select(ApiKey).where(ApiKey.project_id == project.id)).all()
+            for api_key in keys:
+                _revoke_api_key_record(api_key, now)
+            session.add(AuditLog(
+                actor_identifier=f"user:{auth_session.user_id}",
+                actor_user_id=auth_session.user_id,
+                action="project.deleted",
+                target_type="project",
+                target_identifier=project.public_project_id,
+                outcome="success",
+            ))
             return jsonify(success=True, data={"project": _serialize_project(project)})
     except (SQLAlchemyError, RuntimeError, ValueError):
         return _service_unavailable()

@@ -90,12 +90,6 @@ def dashboard_data():
     try:
         now = datetime.now(timezone.utc)
         day_start = now - timedelta(days=1)
-        rate_window = int(os.getenv("COGNISENSE_RATE_LIMIT_WINDOW_SECONDS", "60"))
-        configured_rate = int(os.getenv("COGNISENSE_RATE_LIMIT_REQUESTS", "60"))
-        default_quota = int(os.getenv("COGNISENSE_DEFAULT_DAILY_QUOTA", "0"))
-        if rate_window < 1 or configured_rate < 1 or default_quota < 0:
-            raise ValueError("Invalid gateway limit configuration")
-
         with _session_factory()() as session:
             auth_session = get_authenticated_session(session, _settings())
             if auth_session is None:
@@ -104,16 +98,36 @@ def dashboard_data():
 
             projects = session.scalars(
                 select(Project)
-                .where(Project.owner_user_id == auth_session.user_id)
+                .where(Project.owner_user_id == auth_session.user_id, Project.status != "deleted")
                 .order_by(Project.created_at.desc(), Project.id.desc())
             ).all()
             project_data = []
             project_ids = [project.id for project in projects]
+            default_plan = session.scalar(
+                select(Plan).where(Plan.is_default.is_(True)).order_by(Plan.id).limit(1)
+            )
+            active_projects = sum(project.status == "active" for project in projects)
+            platform_project_limit = int(os.getenv("COGNISENSE_MAX_PROJECTS_PER_USER", "20"))
+            workspace_plan = default_plan
+            workspace_project_limit = (
+                workspace_plan.max_active_projects if workspace_plan else platform_project_limit
+            )
             for project in projects:
-                plan = session.get(Plan, project.plan_id) if project.plan_id is not None else None
-                quota_limits = [limit for limit in (default_quota, plan.quota_limit_per_day if plan else 0) if limit > 0]
-                quota_limit = min(quota_limits) if quota_limits else None
-                plan_rate_limit = plan.request_limit_per_minute if plan and plan.request_limit_per_minute > 0 else None
+                assigned_plan = session.get(Plan, project.plan_id) if project.plan_id is not None else None
+                plan = assigned_plan or default_plan
+                if plan is None:
+                    rate_window = int(os.getenv("COGNISENSE_RATE_LIMIT_WINDOW_SECONDS", "60"))
+                    rate_limit = int(os.getenv("COGNISENSE_RATE_LIMIT_REQUESTS", "60"))
+                    quota_limit_value = int(os.getenv("COGNISENSE_DEFAULT_DAILY_QUOTA", "0"))
+                    project_limit = platform_project_limit
+                else:
+                    rate_window = 60
+                    rate_limit = plan.request_limit_per_minute
+                    quota_limit_value = plan.quota_limit_per_day
+                    project_limit = plan.max_active_projects
+                if rate_window < 1 or rate_limit < 0 or quota_limit_value < 0 or project_limit < 0:
+                    raise ValueError("Invalid effective limit configuration")
+                quota_limit = quota_limit_value if quota_limit_value > 0 else None
                 key_count = session.scalar(
                     select(func.count(ApiKey.id)).where(
                         ApiKey.project_id == project.id,
@@ -147,13 +161,6 @@ def dashboard_data():
                         UsageRecord.http_status_code != 429,
                     )
                 ) or 0
-                plan_rate_count = session.scalar(
-                    select(func.count(UsageRecord.id)).where(
-                        UsageRecord.project_id == project.id,
-                        UsageRecord.request_timestamp >= now - timedelta(minutes=1),
-                        UsageRecord.http_status_code != 429,
-                    )
-                ) or 0
                 created_at = project.created_at
                 if created_at.tzinfo is None:
                     created_at = created_at.replace(tzinfo=timezone.utc)
@@ -170,10 +177,9 @@ def dashboard_data():
                     "quota_used": int(quota_used),
                     "quota_limit": quota_limit,
                     "rate_count": int(rate_count),
-                    "rate_limit": configured_rate,
+                    "rate_limit": rate_limit if rate_limit > 0 else None,
                     "rate_window_seconds": rate_window,
-                    "plan_rate_count": int(plan_rate_count),
-                    "plan_rate_limit": plan_rate_limit,
+                    "max_active_projects": project_limit if project_limit > 0 else None,
                     "plan": plan.name if plan else None,
                 })
 
@@ -182,7 +188,7 @@ def dashboard_data():
                 records = session.execute(
                     select(UsageRecord, Project.display_name)
                     .join(Project, Project.id == UsageRecord.project_id)
-                    .where(Project.owner_user_id == auth_session.user_id)
+                    .where(Project.owner_user_id == auth_session.user_id, Project.status != "deleted")
                     .order_by(UsageRecord.request_timestamp.desc(), UsageRecord.id.desc())
                     .limit(20)
                 ).all()
@@ -205,6 +211,8 @@ def dashboard_data():
                 "recent": recent,
                 "summary": {
                     "total_projects": len(projects),
+                    "active_projects": active_projects,
+                    "active_project_limit": workspace_project_limit if workspace_project_limit > 0 else None,
                     "active_keys": sum(item["active_keys"] for item in project_data),
                     "requests_24h": sum(item["requests_24h"] for item in project_data),
                     "successful_24h": sum(item["successful_24h"] for item in project_data),

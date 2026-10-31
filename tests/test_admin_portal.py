@@ -234,6 +234,15 @@ class AdminPortalTests(unittest.TestCase):
             f"/api/v1/admin/projects/{project_row_id}", json={"status": "archived"}, headers={"X-CSRF-Token": self.csrf_cookie}
         )
         self.assertEqual(archived.status_code, 200)
+        deleted = self.client.delete(
+            f"/api/v1/admin/projects/{project_row_id}", json={}, headers={"X-CSRF-Token": self.csrf_cookie}
+        )
+        self.assertEqual(deleted.status_code, 200)
+        self.assertEqual(deleted.get_json()["data"]["status"], "deleted")
+        with self.session_factory() as session:
+            self.assertEqual(session.get(ApiKey, key_id).status, "revoked")
+            self.assertEqual(session.scalar(select(func.count(UsageRecord.id))), 1)
+        self.assertNotIn("Other Project", self.client.get("/api/v1/admin/projects").get_data(as_text=True))
         key_response = self.client.get("/api/v1/admin/keys")
         self.assertEqual(key_response.status_code, 200)
         self.assertNotIn("secret-key-hash-never-returned", key_response.get_data(as_text=True))
@@ -242,7 +251,7 @@ class AdminPortalTests(unittest.TestCase):
         with self.session_factory() as session:
             self.assertEqual(session.get(ApiKey, key_id).status, "revoked")
             actions = set(session.scalars(select(AuditLog.action)).all())
-        self.assertTrue({"admin.user.disabled", "admin.project.archived", "admin.api_key.revoked"}.issubset(actions))
+        self.assertTrue({"admin.user.disabled", "admin.project.archived", "admin.project.deleted", "admin.api_key.revoked"}.issubset(actions))
 
     def test_plan_changes_validate_and_feed_gateway_limits(self):
         self._make_admin()
@@ -253,11 +262,12 @@ class AdminPortalTests(unittest.TestCase):
 
         created = self.client.post("/api/v1/admin/plans", json={
             "name": "Strict plan", "description": "Runtime test", "request_limit_per_minute": 1,
-            "quota_limit_per_day": 0, "active_api_key_limit": 1, "is_selectable": True,
+            "quota_limit_per_day": 0, "active_api_key_limit": 1, "max_active_projects": 3, "is_selectable": True,
         }, headers={"X-CSRF-Token": self.csrf_cookie})
         self.assertEqual(created.status_code, 201)
         plan_id = created.get_json()["data"]["plan"]["id"]
         self.assertTrue(created.get_json()["data"]["plan"]["is_selectable"])
+        self.assertEqual(created.get_json()["data"]["plan"]["max_active_projects"], 3)
         with self.session_factory.begin() as session:
             project = Project(owner_user_id=self.user_id, display_name="Limited", public_project_id="limited-admin-project")
             session.add(project)

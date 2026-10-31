@@ -106,7 +106,7 @@
     const projects = projectsPayload.data.projects;
     $('#projects-table').innerHTML = table(['Project', 'Owner', 'Status', 'Plan', 'Requests / 24h', 'Actions'], projects.map(project => {
       const options = `<option value="">Default plan</option>${state.plans.map(plan => `<option value="${plan.id}" ${String(plan.id) === String(project.plan_id) ? 'selected' : ''}>${escapeHtml(plan.name)}</option>`).join('')}`;
-      return `<tr><td>${escapeHtml(project.name)}<div class="project-id">${escapeHtml(project.project_id)}</div></td><td>${escapeHtml(project.owner_email)}</td><td>${escapeHtml(project.status)}</td><td><select class="admin-inline-select" data-project-plan="${project.id}">${options}</select></td><td>${escapeHtml(project.requests_24h)}</td><td>${project.status === 'active' ? `<button class="small-button danger" data-project-archive="${project.id}">Archive</button>` : '—'}</td></tr>`;
+      return `<tr><td>${escapeHtml(project.name)}<div class="project-id">${escapeHtml(project.project_id)}</div></td><td>${escapeHtml(project.owner_email)}</td><td>${escapeHtml(project.status)}</td><td><select class="admin-inline-select" data-project-plan="${project.id}" ${project.status !== 'active' ? 'disabled' : ''}>${options}</select></td><td>${escapeHtml(project.requests_24h)}</td><td><div class="row-actions">${project.status === 'active' ? `<button class="small-button danger" data-project-archive="${project.id}">Archive</button>` : ''}${project.status !== 'deleted' ? `<button class="small-button danger" data-project-delete="${project.id}">Delete</button>` : '—'}</div></td></tr>`;
     })) + paginationControls('projects', projectsPayload.data.pagination);
   }
 
@@ -119,7 +119,7 @@
   async function loadPlans() {
     const plans = (await fetchJson('/api/v1/admin/plans')).data.plans;
     state.plans = plans;
-    $('#plans-table').innerHTML = table(['Plan', 'RPM', 'Daily quota', 'Active keys', 'Default', 'Customer selectable', 'Actions'], plans.map(plan => `<tr><td>${escapeHtml(plan.name)}<div class="project-id">${escapeHtml(plan.description || '')}</div></td><td>${escapeHtml(plan.request_limit_per_minute)}</td><td>${escapeHtml(plan.quota_limit_per_day)}</td><td>${escapeHtml(plan.active_api_key_limit)}</td><td>${plan.is_default ? 'Yes' : 'No'}</td><td>${plan.is_selectable ? 'Yes' : 'No'}</td><td><button class="small-button" data-plan-edit="${plan.id}">Edit</button></td></tr>`));
+    $('#plans-table').innerHTML = table(['Plan', 'Requests / 60s', 'Daily quota', 'Active keys', 'Active projects', 'Default', 'Customer selectable', 'Actions'], plans.map(plan => `<tr><td>${escapeHtml(plan.name)}<div class="project-id">${escapeHtml(plan.description || '')}</div></td><td>${escapeHtml(plan.request_limit_per_minute || 'Unlimited')}</td><td>${escapeHtml(plan.quota_limit_per_day || 'Unlimited')}</td><td>${escapeHtml(plan.active_api_key_limit || 'Unlimited')}</td><td>${escapeHtml(plan.max_active_projects || 'Unlimited')}</td><td>${plan.is_default ? 'Yes' : 'No'}</td><td>${plan.is_selectable ? 'Yes' : 'No'}</td><td><button class="small-button" data-plan-edit="${plan.id}">Edit</button></td></tr>`));
   }
 
   async function loadKeys() {
@@ -184,7 +184,8 @@
     const id = $('#plan-id').value;
     const body = { name: $('#plan-name').value.trim(), description: $('#plan-description').value.trim() || null,
       request_limit_per_minute: Number($('#plan-rpm').value), quota_limit_per_day: Number($('#plan-quota').value),
-      active_api_key_limit: Number($('#plan-keys').value), is_default: $('#plan-default').checked,
+      active_api_key_limit: Number($('#plan-keys').value), max_active_projects: Number($('#plan-projects').value),
+      is_default: $('#plan-default').checked,
       is_selectable: $('#plan-selectable').checked };
     try {
       await mutate(id ? `/api/v1/admin/plans/${id}` : '/api/v1/admin/plans', id ? 'PATCH' : 'POST', body);
@@ -213,12 +214,18 @@
         if (!window.confirm('Archive this project? Its API keys will stop working.')) return;
         await mutate(`/api/v1/admin/projects/${id}`, 'PATCH', { status: 'archived' });
         showMessage('Project archived.'); await loadProjects();
+      } else if (target.closest('[data-project-delete]')) {
+        const id = target.closest('[data-project-delete]').dataset.projectDelete;
+        if (!window.confirm('Permanently remove this project from normal access? Keys will be revoked, and usage history will be retained. This cannot be undone.')) return;
+        await mutate(`/api/v1/admin/projects/${id}`, 'DELETE', {});
+        showMessage('Project deleted and API keys revoked. Usage history was retained.'); await loadProjects();
       } else if (target.closest('[data-plan-edit]')) {
         const plan = state.plans.find(item => String(item.id) === target.closest('[data-plan-edit]').dataset.planEdit);
         if (!plan) return;
         $('#plan-id').value = plan.id; $('#plan-name').value = plan.name; $('#plan-description').value = plan.description || '';
         $('#plan-rpm').value = plan.request_limit_per_minute; $('#plan-quota').value = plan.quota_limit_per_day;
-        $('#plan-keys').value = plan.active_api_key_limit; $('#plan-default').checked = plan.is_default;
+        $('#plan-keys').value = plan.active_api_key_limit; $('#plan-projects').value = plan.max_active_projects;
+        $('#plan-default').checked = plan.is_default;
         $('#plan-selectable').checked = plan.is_selectable; $('#plan-save').textContent = 'Save plan';
         $('#plan-name').focus();
       } else if (target.closest('[data-key-revoke]')) {

@@ -61,8 +61,22 @@
       metric('Rate-limit rejections', metrics.rate_limited, 'HTTP 429'),
       metric('Since', new Date(data.since).toLocaleDateString(), 'Rolling 24-hour window')
     ].join('');
-    const statuses = (await fetchJson('/api/v1/admin/usage?group=status&per_page=100')).data.by_status;
+    const [usage, health] = await Promise.all([
+      fetchJson('/api/v1/admin/usage?group=status&per_page=100'),
+      fetchJson('/api/v1/admin/health')
+    ]);
+    renderHealth(health.data);
+    const statuses = usage.data.by_status;
     $('#overview-status').innerHTML = table(['HTTP status', 'Requests'], statuses.map(item => `<tr><td>${escapeHtml(item.status)}</td><td>${escapeHtml(item.requests)}</td></tr>`));
+  }
+
+  async function loadHealth() {
+    renderHealth((await fetchJson('/api/v1/admin/health')).data);
+  }
+
+  function renderHealth(health) {
+    const item = (label, status) => `<article class="health-item"><span>${escapeHtml(label)}</span><strong class="health-status health-${escapeHtml(status)}">${escapeHtml(status.replace('_', ' '))}</strong></article>`;
+    $('#admin-health').innerHTML = item('Database', health.database) + item('Gateway', health.gateway);
   }
 
   async function loadUsers() {
@@ -105,7 +119,7 @@
   async function loadPlans() {
     const plans = (await fetchJson('/api/v1/admin/plans')).data.plans;
     state.plans = plans;
-    $('#plans-table').innerHTML = table(['Plan', 'RPM', 'Daily quota', 'Active keys', 'Default', 'Actions'], plans.map(plan => `<tr><td>${escapeHtml(plan.name)}<div class="project-id">${escapeHtml(plan.description || '')}</div></td><td>${escapeHtml(plan.request_limit_per_minute)}</td><td>${escapeHtml(plan.quota_limit_per_day)}</td><td>${escapeHtml(plan.active_api_key_limit)}</td><td>${plan.is_default ? 'Yes' : 'No'}</td><td><button class="small-button" data-plan-edit="${plan.id}">Edit</button></td></tr>`));
+    $('#plans-table').innerHTML = table(['Plan', 'RPM', 'Daily quota', 'Active keys', 'Default', 'Customer selectable', 'Actions'], plans.map(plan => `<tr><td>${escapeHtml(plan.name)}<div class="project-id">${escapeHtml(plan.description || '')}</div></td><td>${escapeHtml(plan.request_limit_per_minute)}</td><td>${escapeHtml(plan.quota_limit_per_day)}</td><td>${escapeHtml(plan.active_api_key_limit)}</td><td>${plan.is_default ? 'Yes' : 'No'}</td><td>${plan.is_selectable ? 'Yes' : 'No'}</td><td><button class="small-button" data-plan-edit="${plan.id}">Edit</button></td></tr>`));
   }
 
   async function loadKeys() {
@@ -124,6 +138,14 @@
     const start = new Date(end.getTime() - days * 86400000);
     const params = new URLSearchParams({ group: $('#usage-group').value, from: start.toISOString(), to: end.toISOString(), page: String(state.pages.usage), per_page: '100' });
     const data = (await fetchJson(`/api/v1/admin/usage?${params}`)).data;
+    const metrics = data.metrics;
+    $('#usage-metrics').innerHTML = [
+      metric('Requests', metrics.requests, 'Selected date range'),
+      metric('Successful', metrics.successful, 'HTTP 2xx and 3xx'),
+      metric('Failures', metrics.errors, 'HTTP 4xx and 5xx, excluding 429'),
+      metric('Rate-limited', metrics.rate_limited, 'HTTP 429')
+    ].join('');
+    $('#usage-trends').innerHTML = table(['Day', 'Requests', 'Successful', 'Failures', 'HTTP 429'], data.trends.map(item => `<tr><td>${escapeHtml(item.day)}</td><td>${escapeHtml(item.requests)}</td><td>${escapeHtml(item.successful)}</td><td>${escapeHtml(item.errors)}</td><td>${escapeHtml(item.rate_limited)}</td></tr>`));
     $('#usage-table').innerHTML = `<p class="muted-text">${escapeHtml(new Date(data.from).toLocaleString())} to ${escapeHtml(new Date(data.to).toLocaleString())}</p>${table(['Group', 'Requests'], data.groups.map(group => `<tr><td>${escapeHtml(group.label)}</td><td>${escapeHtml(group.requests)}</td></tr>`))}${paginationControls('usage', data.pagination)}<h2>HTTP status breakdown</h2>${table(['HTTP status', 'Requests'], data.by_status.map(item => `<tr><td>${escapeHtml(item.status)}</td><td>${escapeHtml(item.requests)}</td></tr>`))}`;
   }
 
@@ -135,7 +157,7 @@
     $('#audit-table').innerHTML = `<p class="muted-text">${escapeHtml(new Date(data.from).toLocaleString())} to ${escapeHtml(new Date(data.to).toLocaleString())}</p>${table(['Time', 'Actor', 'Action', 'Target', 'Outcome'], data.records.map(item => `<tr><td>${escapeHtml(new Date(item.occurred_at).toLocaleString())}</td><td>${escapeHtml(item.actor)}</td><td>${escapeHtml(item.action)}</td><td>${escapeHtml(item.target_type)} ${escapeHtml(item.target_identifier)}</td><td>${escapeHtml(item.outcome)}</td></tr>`))}${paginationControls('audit', data.pagination)}`;
   }
 
-  const loaders = { overview: loadOverview, users: loadUsers, projects: loadProjects, plans: loadPlans, keys: loadKeys, usage: loadUsage, audit: loadAudit };
+  const loaders = { overview: loadOverview, health: loadHealth, users: loadUsers, projects: loadProjects, plans: loadPlans, keys: loadKeys, usage: loadUsage, audit: loadAudit };
   async function loadView(view) {
     try { await loaders[view](); }
     catch (error) { showMessage(error.message, true); }
@@ -162,7 +184,8 @@
     const id = $('#plan-id').value;
     const body = { name: $('#plan-name').value.trim(), description: $('#plan-description').value.trim() || null,
       request_limit_per_minute: Number($('#plan-rpm').value), quota_limit_per_day: Number($('#plan-quota').value),
-      active_api_key_limit: Number($('#plan-keys').value), is_default: $('#plan-default').checked };
+      active_api_key_limit: Number($('#plan-keys').value), is_default: $('#plan-default').checked,
+      is_selectable: $('#plan-selectable').checked };
     try {
       await mutate(id ? `/api/v1/admin/plans/${id}` : '/api/v1/admin/plans', id ? 'PATCH' : 'POST', body);
       showMessage(id ? 'Plan updated. Limits apply to the next request.' : 'Plan created.');
@@ -195,7 +218,8 @@
         if (!plan) return;
         $('#plan-id').value = plan.id; $('#plan-name').value = plan.name; $('#plan-description').value = plan.description || '';
         $('#plan-rpm').value = plan.request_limit_per_minute; $('#plan-quota').value = plan.quota_limit_per_day;
-        $('#plan-keys').value = plan.active_api_key_limit; $('#plan-default').checked = plan.is_default; $('#plan-save').textContent = 'Save plan';
+        $('#plan-keys').value = plan.active_api_key_limit; $('#plan-default').checked = plan.is_default;
+        $('#plan-selectable').checked = plan.is_selectable; $('#plan-save').textContent = 'Save plan';
         $('#plan-name').focus();
       } else if (target.closest('[data-key-revoke]')) {
         const id = target.closest('[data-key-revoke]').dataset.keyRevoke;

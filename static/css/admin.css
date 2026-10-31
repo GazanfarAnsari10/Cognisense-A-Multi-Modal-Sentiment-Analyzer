@@ -8,10 +8,17 @@
 .admin-detail { margin-top: 18px; padding: 18px; border-left: 3px solid var(--teal); background: var(--surface); }
 .admin-detail h3 { margin: 0 0 12px; font: 600 18px var(--font-display); }
 .admin-inline-select { max-width: 180px; min-height: 34px !important; padding: 5px 8px !important; }
+.usage-metrics { margin: 18px 0; }
+.health-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 14px 0 24px; }
+.health-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border: 1px solid var(--line); background: var(--surface); }
+.health-status { text-transform: capitalize; }
+.health-healthy { color: var(--good); }
+.health-unavailable { color: var(--bad); }
+.health-not_configured { color: var(--muted); }
 .admin-row-button { white-space: nowrap; }
 .admin-status { color: var(--muted); font-size: 12px; }
 .admin-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-top: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: 12px; }
 .admin-pagination > div { display: flex; gap: 8px; }
 .admin-pagination button:disabled { cursor: not-allowed; opacity: .45; }
 @media (max-width: 850px) { .admin-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 620px) { .admin-form, .admin-filters { grid-template-columns: 1fr 1fr; gap: 10px; } .admin-form label, .admin-form .row-actions, .admin-form > p { grid-column: 1 / -1; } .admin-filters > * { min-width: 0; } .admin-filters .button-primary { grid-column: 1 / -1; } }
+@media (max-width: 620px) { .admin-form, .admin-filters, .health-grid { grid-template-columns: 1fr; gap: 10px; } .admin-form label, .admin-form .row-actions, .admin-form > p { grid-column: 1 / -1; } .admin-filters > * { min-width: 0; } .admin-filters .button-primary { grid-column: 1 / -1; } }

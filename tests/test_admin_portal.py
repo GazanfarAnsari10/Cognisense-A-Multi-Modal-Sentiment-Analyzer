@@ -164,6 +164,7 @@ class AdminPortalTests(unittest.TestCase):
             ("/api/v1/admin/plans", "GET"),
             ("/api/v1/admin/keys", "GET"),
             ("/api/v1/admin/usage", "GET"),
+            ("/api/v1/admin/health", "GET"),
         ]
         for path, method in endpoints:
             with self.subTest(path=path):
@@ -252,10 +253,11 @@ class AdminPortalTests(unittest.TestCase):
 
         created = self.client.post("/api/v1/admin/plans", json={
             "name": "Strict plan", "description": "Runtime test", "request_limit_per_minute": 1,
-            "quota_limit_per_day": 0, "active_api_key_limit": 1,
+            "quota_limit_per_day": 0, "active_api_key_limit": 1, "is_selectable": True,
         }, headers={"X-CSRF-Token": self.csrf_cookie})
         self.assertEqual(created.status_code, 201)
         plan_id = created.get_json()["data"]["plan"]["id"]
+        self.assertTrue(created.get_json()["data"]["plan"]["is_selectable"])
         with self.session_factory.begin() as session:
             project = Project(owner_user_id=self.user_id, display_name="Limited", public_project_id="limited-admin-project")
             session.add(project)
@@ -321,10 +323,38 @@ class AdminPortalTests(unittest.TestCase):
             ])
         response = self.client.get("/api/v1/admin/usage?group=project&per_page=100")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json()["data"]["groups"][0]["requests"], 3)
-        self.assertEqual({row["status"]: row["requests"] for row in response.get_json()["data"]["by_status"]}, {200: 1, 429: 1, 500: 1})
+        data = response.get_json()["data"]
+        self.assertEqual(data["groups"][0]["requests"], 3)
+        self.assertEqual(data["metrics"], {"requests": 3, "successful": 1, "errors": 1, "rate_limited": 1})
+        self.assertEqual({row["status"]: row["requests"] for row in data["by_status"]}, {200: 1, 429: 1, 500: 1})
+        self.assertEqual(sum(row["requests"] for row in data["trends"]), 3)
+        self.assertEqual(sum(row["rate_limited"] for row in data["trends"]), 1)
+        empty_end = datetime.now(timezone.utc) - timedelta(days=10)
+        empty_start = empty_end - timedelta(days=1)
+        empty = self.client.get(
+            "/api/v1/admin/usage?from=" + empty_start.isoformat().replace("+00:00", "Z")
+            + "&to=" + empty_end.isoformat().replace("+00:00", "Z")
+        ).get_json()["data"]
+        self.assertEqual(empty["metrics"], {"requests": 0, "successful": 0, "errors": 0, "rate_limited": 0})
+        self.assertEqual(empty["trends"], [])
         self.assertEqual(self.client.get("/api/v1/admin/usage?group=unknown").status_code, 400)
         self.assertEqual(self.client.get("/api/v1/admin/usage?from=2020-01-01T00:00:00Z&to=2020-07-01T00:00:00Z").status_code, 400)
+
+    def test_admin_health_reports_safe_component_statuses(self):
+        self.assertEqual(self.app.test_client().get("/api/v1/admin/health").status_code, 401)
+        self.assertEqual(self.client.get("/api/v1/admin/health").status_code, 403)
+        self._make_admin()
+        with patch("admin_portal._gateway_health_status", return_value="unavailable"):
+            response = self.client.get("/api/v1/admin/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["data"], {"database": "healthy", "gateway": "unavailable"})
+        self.assertNotIn("DATABASE_URL", response.get_data(as_text=True))
+
+        from admin_portal import _gateway_health_status
+        with patch.dict(os.environ, {"COGNISENSE_GATEWAY_HEALTH_URL": "file:///private/secret"}):
+            self.assertEqual(_gateway_health_status(), "unavailable")
+        with patch.dict(os.environ, {"COGNISENSE_GATEWAY_HEALTH_URL": "http://localhost/health?token=secret"}):
+            self.assertEqual(_gateway_health_status(), "unavailable")
 
     def test_admin_key_revocation_immediately_blocks_gateway_key(self):
         self._make_admin()

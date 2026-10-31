@@ -40,6 +40,8 @@
             <p class="global-message" id="global-message" role="status" aria-live="polite"></p>
             <section class="view-panel" id="overview-view" aria-labelledby="view-title">
                 <div class="metric-grid" id="admin-metrics"><div class="metric-skeleton"></div><div class="metric-skeleton"></div><div class="metric-skeleton"></div><div class="metric-skeleton"></div></div>
+                <div class="section-heading"><div><p class="eyebrow">Operational checks</p><h2>Service health</h2></div><button class="button-secondary" data-refresh="health" type="button">Refresh</button></div>
+                <div class="health-grid" id="admin-health" aria-live="polite"></div>
                 <div class="section-heading"><div><p class="eyebrow">Recorded requests</p><h2>24-hour status totals</h2></div></div>
                 <div class="table-wrap" id="overview-status"></div>
             </section>
@@ -61,6 +63,7 @@
                     <label>Daily quota<input id="plan-quota" type="number" min="0" max="1000000" required></label>
                     <label>Active API key limit<input id="plan-keys" type="number" min="0" max="1000000" required></label>
                     <label class="check-label"><input id="plan-default" type="checkbox"> Default plan</label>
+                    <label class="check-label"><input id="plan-selectable" type="checkbox"> Available for customer selection</label>
                     <div class="row-actions"><button class="button-primary" type="submit" id="plan-save">Create plan</button><button class="button-secondary" type="button" id="plan-reset">Clear</button></div>
                     <p class="muted-text">Zero means no plan-specific ceiling. Platform environment limits remain upper bounds.</p>
                 </form>
@@ -73,6 +76,9 @@
             <section class="view-panel" id="usage-view" hidden>
                 <div class="section-heading"><div><p class="eyebrow">Maximum range: 90 days</p><h2>Usage</h2></div></div>
                 <div class="selector-row admin-filters"><label for="usage-group">Group by</label><select id="usage-group"><option value="project">Project</option><option value="user">User</option><option value="day">Day</option><option value="status">HTTP status</option></select><label for="usage-days">Days</label><select id="usage-days"><option value="1">1</option><option value="7">7</option><option value="30" selected>30</option><option value="90">90</option></select><button class="button-primary" id="usage-load" type="button">Load usage</button></div>
+                <div class="metric-grid usage-metrics" id="usage-metrics"></div>
+                <div class="section-heading"><div><p class="eyebrow">Daily aggregates</p><h2>Usage trends</h2></div></div>
+                <div class="table-wrap" id="usage-trends"></div>
                 <div class="table-wrap" id="usage-table"></div>
             </section>
             <section class="view-panel" id="audit-view" hidden>

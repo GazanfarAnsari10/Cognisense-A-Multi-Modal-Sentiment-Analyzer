@@ -1,7 +1,7 @@
 (() => {
   const $ = selector => document.querySelector(selector);
   const message = $('#global-message');
-  const state = { projects: [], selectedProject: '', dashboard: null };
+  const state = { projects: [], selectedProject: '', dashboard: null, planPage: 1 };
 
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -87,6 +87,35 @@
     }).join('') : '<div class="empty-state"><strong>No usage data yet</strong>Usage is unavailable until you create a project and make requests.</div>';
   }
 
+  function planLimit(value, unit) {
+    return value > 0 ? `${escapeHtml(value)} ${unit}` : `No plan-specific ${unit} limit`;
+  }
+
+  async function loadPlans() {
+    try {
+      const data = (await fetchJson(`/api/v1/projects/plans?page=${state.planPage}&per_page=20`)).data;
+      $('#available-plans').innerHTML = data.plans.length ? data.plans.map(plan => `<article class="plan-option">
+        <h3>${escapeHtml(plan.name)}</h3><p>${escapeHtml(plan.description || 'No description provided.')}</p>
+        <dl><div><dt>Requests per minute</dt><dd>${planLimit(plan.request_limit_per_minute, 'requests/minute')}</dd></div>
+        <div><dt>Daily quota</dt><dd>${planLimit(plan.quota_limit_per_day, 'requests/day')}</dd></div>
+        <div><dt>Active API keys</dt><dd>${planLimit(plan.active_api_key_limit, 'keys')}</dd></div></dl>
+      </article>`).join('') : '<div class="empty-state"><strong>No plans are available</strong>Ask your administrator to publish a plan for customer selection.</div>';
+      $('#plan-assignments').innerHTML = data.projects.length ? `<table><thead><tr><th>Project</th><th>Current plan</th><th>Select plan</th></tr></thead><tbody>${data.projects.map(project => {
+        const current = project.current_plan;
+        const options = data.plans.map(plan => `<option value="${plan.id}" ${current && current.id === plan.id ? 'selected' : ''}>${escapeHtml(plan.name)}</option>`).join('');
+        const hiddenCurrent = current && !data.plans.some(plan => plan.id === current.id)
+          ? `<option value="" selected disabled>${escapeHtml(current.name)} (not available for new assignments)</option>` : '';
+        const placeholder = current ? '' : '<option value="" selected disabled>Select a plan</option>';
+        return `<tr><td>${escapeHtml(project.name)}<div class="project-id">${escapeHtml(project.project_id)} · ${escapeHtml(project.status)}</div></td>
+          <td>${escapeHtml(current ? `${current.name} (${project.plan_assignment})` : 'Platform limits only')}</td>
+          <td><select class="admin-inline-select" data-user-plan="${escapeHtml(project.project_id)}" ${project.status !== 'active' ? 'disabled' : ''}>${placeholder}${hiddenCurrent}${options}</select></td></tr>`;
+      }).join('')}</tbody></table>${data.pagination.pages > 1 ? `<div class="plan-pagination"><span>Page ${data.pagination.page} of ${data.pagination.pages} · ${data.pagination.total} active projects</span><button class="small-button" type="button" data-plan-page="${data.pagination.page - 1}" ${data.pagination.page <= 1 ? 'disabled' : ''}>Previous</button><button class="small-button" type="button" data-plan-page="${data.pagination.page + 1}" ${data.pagination.page >= data.pagination.pages ? 'disabled' : ''}>Next</button></div>` : ''}` : '<div class="empty-state"><strong>No active projects</strong>Create an active project before selecting its plan.</div>';
+    } catch (error) {
+      $('#available-plans').innerHTML = `<div class="error-state">${escapeHtml(error.message)}</div>`;
+      $('#plan-assignments').replaceChildren();
+    }
+  }
+
   async function loadKeys() {
     const projectId = $('#key-project').value;
     state.selectedProject = projectId;
@@ -143,6 +172,7 @@
     control.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
   });
   $('#key-project').addEventListener('change', loadKeys);
+  $('#plans-refresh').addEventListener('click', loadPlans);
 
   $('#project-form').addEventListener('submit', async event => {
     event.preventDefault();
@@ -157,6 +187,12 @@
   });
 
   document.addEventListener('click', async event => {
+    const planPage = event.target.closest('[data-plan-page]');
+    if (planPage) {
+      state.planPage = Number(planPage.dataset.planPage);
+      await loadPlans();
+      return;
+    }
     const rename = event.target.closest('[data-rename]');
     const archive = event.target.closest('[data-archive]');
     const keys = event.target.closest('[data-keys]');
@@ -187,6 +223,19 @@
         await loadDashboard();
       }
     } catch (error) { showMessage(error.message, true); }
+  });
+
+  document.addEventListener('change', async event => {
+    const select = event.target.closest('[data-user-plan]');
+    if (!select || !select.value) return;
+    try {
+      await mutate(`/api/v1/projects/${encodeURIComponent(select.dataset.userPlan)}/plan`, 'PATCH', { plan_id: Number(select.value) });
+      showMessage('Project plan updated. Gateway limits apply to the next request.');
+      await loadPlans();
+    } catch (error) {
+      showMessage(error.message, true);
+      await loadPlans();
+    }
   });
 
   $('#create-key').addEventListener('click', async () => {

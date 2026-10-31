@@ -293,6 +293,55 @@ Manual verification: sign in as the provisioned admin, open `/admin`, change a p
 
 This phase does not add project-specific overrides or background historical aggregation. Overview counts are computed from existing records at request time; very large deployments may require indexed reporting/rollups and externalized audit retention. Platform environment ceilings intentionally cannot be raised through the admin UI.
 
+## Phase 7C customer plans and operations
+
+The developer dashboard now includes a Plans view. Plan selection is project-scoped because `projects.plan_id` is the assignment consumed by API-key creation and gateway admission; users do not receive a separate account-level limit. Authenticated users can view published plans and their effective project plan, and can assign an available plan only to an active project they own. The assignment is persisted to `projects.plan_id`, requires the session-bound CSRF token, and is recorded in `audit_logs`. Plan definitions, admin roles, and other users' projects cannot be changed through the customer routes. There are no billing, payment, or paid-subscription integrations.
+
+Admins must explicitly enable **Available for customer selection** when creating or editing a plan. The new `plans.is_selectable` field defaults to false at the database level, so existing and newly created plans remain private unless an admin publishes them. Unpublishing a plan does not change existing assignments or gateway enforcement; it only prevents new customer assignments. An owner can select only a published plan, not clear an assignment to fall back to a potentially looser default.
+
+Policy precedence is: an explicitly assigned project plan, otherwise the configured default plan, otherwise platform limits alone. The project assignment is the only project-level override; there are no separate per-project numeric override fields. Platform rate settings remain active alongside plan RPM limits, and positive daily quotas use the lower positive platform/plan ceiling. A plan limit of `0` adds no ceiling for that limit. The gateway re-reads the project and plan from PostgreSQL during admission, so plan assignments and edits apply on the next request without restarting Flask or the gateway. Existing active keys are not invalidated when an active-key cap is lowered; the cap prevents creating additional keys.
+
+### Migration and configuration
+
+This phase adds the additive Alembic revision `202610280001` after the Phase 7A admin revision. Apply it once to the same PostgreSQL database used by Flask and the gateway; do not modify or rerun prior migrations manually:
+
+```powershell
+$env:DATABASE_URL = 'postgresql+psycopg://user:password@localhost:5432/cognisense'
+$env:AUTH_SECRET_KEY = '<at-least-32-character-random-secret>'
+$env:AUTH_COOKIE_SECURE = 'false' # local HTTP development only
+alembic upgrade head
+```
+
+The admin health panel checks the Flask database with a safe `SELECT 1` and probes the gateway's public health endpoint with a two-second timeout. The default probe URL is `http://127.0.0.1:8000/api/v1/health`. Set `COGNISENSE_GATEWAY_HEALTH_URL` to the gateway's reachable health URL when Flask and the gateway run in separate containers or hosts. The probe sends no credentials, does not follow redirects, and only returns `healthy`, `unavailable`, or `not configured`; it does not display URLs or response details. This setting is optional; a wrong or unreachable URL simply reports the gateway as unavailable.
+
+Run the services in separate PowerShell terminals after applying the migration:
+
+```powershell
+python app.py
+python -m uvicorn api_gateway:app --host 127.0.0.1 --port 8000
+```
+
+Code changes require the normal Flask/gateway reload or restart. Database plan changes do not. For a containerized deployment, point `COGNISENSE_GATEWAY_HEALTH_URL` at the internal gateway service URL, not a public URL that requires authentication.
+
+### Verification and tests
+
+1. Sign in as an admin at `/admin`, create or edit a plan, set its limits, and enable customer selection. Verify the plan is marked selectable in Plans & Limits.
+2. Sign in as a regular user, open the developer dashboard's Plans view, assign that plan to an active project, refresh the page, and confirm the assignment remains visible. Try an unpublished plan ID or another user's project through the API; the request must be rejected.
+3. With a published plan configured for one request per minute, assign it to a project and make two valid requests using that project's API key within a minute. Expect the second request to return HTTP `429`. Change the plan limit and verify the next gateway admission uses the new value without restarting either service. Daily quota behavior remains covered by the gateway regression tests.
+4. Verify a regular user gets `403` from admin APIs and sees no admin navigation link; verify an anonymous request gets `401` from APIs and is redirected from `/admin`. In the admin overview, check that database and gateway health appear without secrets; stop the gateway briefly to see its status become unavailable.
+
+Run the Python regressions, syntax checks, and whitespace validation from the repository root:
+
+```powershell
+python -m unittest discover -s tests -v
+python -m compileall -q admin_portal.py api_gateway.py projects.py developer_portal.py database/models.py tests
+node --check static/js/admin.js
+node --check static/js/developer.js
+git diff --check
+```
+
+The PostgreSQL migration integration test requires a dedicated test database whose name contains `test`, configured with `TEST_DATABASE_URL`; it is skipped otherwise. Do not point that variable at a normal development or production database. Usage totals and day trends are computed from stored request records at query time over a maximum 90-day range; no background rollups, alerting, billing, or external audit retention are included.
+
 ## Phase 6A database foundation
 
 This repository now includes the initial PostgreSQL foundation for the multi-user platform planned in later phases. The implementation is intentionally isolated from the current gateway so the existing credentials-based API behavior remains unchanged.

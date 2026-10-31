@@ -22,6 +22,7 @@
         <button type="button" class="dash-nav-item" data-view="projects" title="Projects" aria-label="Projects"><span aria-hidden="true">▦</span><span class="nav-label">Projects</span></button>
         <button type="button" class="dash-nav-item" data-view="keys" title="API keys" aria-label="API keys"><span aria-hidden="true">⌘</span><span class="nav-label">API keys</span></button>
         <button type="button" class="dash-nav-item" data-view="usage" title="Usage" aria-label="Usage"><span aria-hidden="true">▤</span><span class="nav-label">Usage</span></button>
+        <button type="button" class="dash-nav-item" data-view="plans" title="Plans" aria-label="Plans"><span aria-hidden="true">⇥</span><span class="nav-label">Plans</span></button>
         <button type="button" class="dash-nav-item" data-view="account" title="Account" aria-label="Account"><span aria-hidden="true">◉</span><span class="nav-label">Account</span></button>
         {% if user.role == 'admin' %}<a class="dash-nav-item" href="{{ url_for('admin.dashboard') }}" title="Admin dashboard" aria-label="Admin dashboard"><span aria-hidden="true">⚙</span><span class="nav-label">Admin dashboard</span></a>{% endif %}
       </nav>
@@ -59,6 +60,12 @@
         <div class="usage-list" id="usage-list"></div>
         <div class="section-heading"><div><p class="eyebrow">Last 20 recorded events</p><h2>Request activity</h2></div></div>
         <div class="table-wrap" id="recent-usage"></div>
+      </section>
+      <section class="view-panel" id="plans-view" hidden>
+        <div class="section-heading"><div><p class="eyebrow">Project limits</p><h2>Available plans</h2></div><button class="button-secondary" type="button" id="plans-refresh">Refresh</button></div>
+        <div class="plan-catalog" id="available-plans"></div>
+        <div class="section-heading"><div><p class="eyebrow">Assignments apply to gateway requests</p><h2>Your projects</h2></div></div>
+        <div class="table-wrap" id="plan-assignments"></div>
       </section>
       <section class="view-panel" id="account-view" hidden>
         <div class="section-heading"><div><p class="eyebrow">Profile</p><h2>Account</h2></div></div>

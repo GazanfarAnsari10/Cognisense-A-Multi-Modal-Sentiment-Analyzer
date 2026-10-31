@@ -137,6 +137,16 @@ td.status-error { color: var(--bad); font-weight: 700; }
 .secret-reveal code { align-self: center; overflow-wrap: anywhere; color: var(--deep); }
 .secret-reveal p { grid-column: 1 / -1; margin: 0; color: #874c3d; font-size: 12px; }
 .usage-row { grid-template-columns: minmax(150px, 1fr) minmax(130px, 1fr) minmax(140px, 1fr); }
+.plan-catalog { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0 28px; }
+.plan-option { min-width: 0; padding: 18px; border-top: 2px solid var(--teal); background: var(--surface); }
+.plan-option h3 { margin: 0 0 6px; font: 600 18px var(--font-display); overflow-wrap: anywhere; }
+.plan-option p { min-height: 36px; margin: 0 0 14px; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.plan-option dl { display: grid; gap: 9px; margin: 0; }
+.plan-option dl div { display: flex; justify-content: space-between; gap: 10px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 12px; }
+.plan-option dt { color: var(--muted); }
+.plan-option dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+.plan-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px; border-top: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: 12px; }
+.plan-pagination span { margin-right: auto; }
 .usage-meter { height: 7px; margin-top: 7px; background: #e5eeeb; }
 .usage-meter span { display: block; height: 100%; background: var(--teal); }
 .account-details { max-width: 700px; margin: 22px 0; background: white; border-top: 1px solid var(--line); }
@@ -150,6 +160,7 @@ td.status-error { color: var(--bad); font-weight: 700; }
   .dashboard-shell.sidebar-collapsed { grid-template-columns: 68px minmax(0, 1fr); }
   .dev-sidebar { padding-inline: 13px; }
   .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .plan-catalog { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .project-row { grid-template-columns: minmax(120px, 1fr) auto; }
   .project-row > :nth-child(2) { grid-column: 1; }
   .project-row .row-actions { grid-column: 2; grid-row: 1 / span 2; }
@@ -200,6 +211,7 @@ td.status-error { color: var(--bad); font-weight: 700; }
   .project-row .row-actions { gap: 4px; }
   .small-button { padding: 6px; font-size: 11px; }
   .usage-row { grid-template-columns: 1fr; gap: 5px; }
+  .plan-catalog { grid-template-columns: 1fr; }
   .account-details div { grid-template-columns: 95px 1fr; padding: 13px; }
   .secret-reveal { grid-template-columns: 1fr; }
   .secret-reveal p { grid-column: auto; }

@@ -12,7 +12,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from auth import _csrf_hash, _new_csrf_token
-from database.models import ApiKey, AuthSession, Base, Project, UsageRecord, User
+from database.models import ApiKey, AuditLog, AuthSession, Base, Plan, Project, UsageRecord, User
 from projects import projects_blueprint
 
 
@@ -195,6 +195,90 @@ class ProjectApiTests(unittest.TestCase):
             403,
         )
         self.assertEqual(self.client.delete(f"/api/v1/projects/{project_id}").status_code, 403)
+
+    def test_selectable_plans_are_owner_scoped_and_assignment_requires_csrf(self):
+        project_id = self._post_project().get_json()["data"]["project"]["project_id"]
+        with self.session_factory.begin() as session:
+            available = Plan(
+                name="Customer Starter",
+                description="Published plan",
+                request_limit_per_minute=3,
+                quota_limit_per_day=25,
+                active_api_key_limit=2,
+                is_selectable=True,
+            )
+            private = Plan(name="Internal only", request_limit_per_minute=1)
+            session.add_all([available, private])
+            session.flush()
+            available_id, private_id = available.id, private.id
+
+        catalog = self.client.get("/api/v1/projects/plans")
+        self.assertEqual(catalog.status_code, 200)
+        self.assertEqual([item["name"] for item in catalog.get_json()["data"]["plans"]], ["Customer Starter"])
+        self.assertIsNone(catalog.get_json()["data"]["projects"][0]["current_plan"])
+        self.assertEqual(self.app.test_client().get("/api/v1/projects/plans").status_code, 401)
+        self.assertEqual(
+            self.client.patch(f"/api/v1/projects/{project_id}/plan", json={"plan_id": available_id}).status_code,
+            403,
+        )
+        with_extra_field = self.client.patch(
+            f"/api/v1/projects/{project_id}/plan",
+            json={"plan_id": available_id, "role": "admin"},
+            headers={"X-CSRF-Token": self.csrf_token},
+        )
+        self.assertEqual(with_extra_field.status_code, 400)
+        hidden_plan = self.client.patch(
+            f"/api/v1/projects/{project_id}/plan",
+            json={"plan_id": private_id},
+            headers={"X-CSRF-Token": self.csrf_token},
+        )
+        self.assertEqual(hidden_plan.status_code, 400)
+
+        assigned = self.client.patch(
+            f"/api/v1/projects/{project_id}/plan",
+            json={"plan_id": available_id},
+            headers={"X-CSRF-Token": self.csrf_token},
+        )
+        self.assertEqual(assigned.status_code, 200)
+        self.assertEqual(assigned.get_json()["data"]["plan"]["name"], "Customer Starter")
+        with self.session_factory() as session:
+            project = session.scalar(select(Project).where(Project.public_project_id == project_id))
+            self.assertEqual(project.plan_id, available_id)
+            self.assertEqual(session.scalar(select(AuditLog.action)), "project.plan_selected")
+
+        other_client = self.app.test_client()
+        self._authenticate_client(other_client, "other-plan-owner@example.com")
+        cross_owner = other_client.patch(
+            f"/api/v1/projects/{project_id}/plan",
+            json={"plan_id": available_id},
+            headers={"X-CSRF-Token": other_client.get_cookie("cognisense_csrf").value},
+        )
+        self.assertEqual(cross_owner.status_code, 404)
+
+    def test_customer_selected_plan_is_enforced_by_gateway_without_restart(self):
+        project_id = self._post_project("Selected plan project").get_json()["data"]["project"]["project_id"]
+        with self.session_factory.begin() as session:
+            plan = Plan(name="One request plan", request_limit_per_minute=1, is_selectable=True)
+            session.add(plan)
+            session.flush()
+            plan_id = plan.id
+        assigned = self.client.patch(
+            f"/api/v1/projects/{project_id}/plan",
+            json={"plan_id": plan_id},
+            headers={"X-CSRF-Token": self.csrf_token},
+        )
+        self.assertEqual(assigned.status_code, 200)
+
+        import api_gateway
+        with patch("api_gateway.get_session_factory", return_value=self.session_factory), patch.dict(
+            os.environ, {"COGNISENSE_RATE_LIMIT_REQUESTS": "20", "COGNISENSE_DEFAULT_DAILY_QUOTA": "0"}
+        ):
+            principal = api_gateway.AuthenticatedProject(project_id, None)
+            reservation = api_gateway._reserve_usage(principal)
+            api_gateway._finish_usage(reservation, 200, __import__("time").monotonic())
+            with self.assertRaises(Exception) as rejected:
+                api_gateway._reserve_usage(principal)
+        self.assertEqual(getattr(rejected.exception, "status_code", None), 429)
 
     def test_project_with_api_key_and_usage_is_archived_not_deleted(self):
         created = self._post_project()

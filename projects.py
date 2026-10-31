@@ -21,12 +21,14 @@ from auth import (
     get_authenticated_session,
     validate_session_csrf,
 )
-from database.models import ApiKey, AuthSession, Plan, Project, User
+from database.models import ApiKey, AuditLog, AuthSession, Plan, Project, User
 from database.session import get_session_factory
 
 logger = logging.getLogger(__name__)
 projects_blueprint = Blueprint("projects", __name__, url_prefix="/api/v1/projects")
 DEFAULT_PROJECT_LIMIT = 20
+MAX_PROJECT_PAGE_SIZE = 100
+MAX_PROJECT_PAGE_NUMBER = 100_000
 DEFAULT_ACTIVE_KEY_LIMIT = 10
 MAX_KEY_EXPIRY_DAYS = 365
 API_KEY_PREFIX = "cgs_live_"
@@ -218,6 +220,126 @@ def list_projects():
                 success=True,
                 data={"projects": [_serialize_project(project) for project in projects]},
             )
+    except (SQLAlchemyError, RuntimeError, ValueError):
+        return _service_unavailable()
+
+
+def _serialize_selectable_plan(plan: Plan) -> dict[str, Any]:
+    return {
+        "id": plan.id,
+        "name": plan.name,
+        "description": plan.description,
+        "request_limit_per_minute": plan.request_limit_per_minute,
+        "quota_limit_per_day": plan.quota_limit_per_day,
+        "active_api_key_limit": plan.active_api_key_limit,
+    }
+
+
+@projects_blueprint.get("/plans")
+def list_selectable_plans():
+    try:
+        with _session_factory()() as session:
+            _, context, failure = _resolve_request_session(session)
+            if failure is not None:
+                return failure
+            _, auth_session = context
+            try:
+                page = int(request.args.get("page", "1"))
+                page_size = int(request.args.get("per_page", "20"))
+            except ValueError:
+                return _error("invalid_request", "Pagination values are invalid.", 400)
+            if not 1 <= page <= MAX_PROJECT_PAGE_NUMBER or not 1 <= page_size <= MAX_PROJECT_PAGE_SIZE:
+                return _error("invalid_request", "Pagination values are outside supported limits.", 400)
+            plans = session.scalars(
+                select(Plan).where(Plan.is_selectable.is_(True)).order_by(Plan.name, Plan.id)
+            ).all()
+            default_plan = session.scalar(
+                select(Plan).where(Plan.is_default.is_(True)).order_by(Plan.id).limit(1)
+            )
+            project_filters = (Project.owner_user_id == auth_session.user_id, Project.status == "active")
+            project_total = session.scalar(select(func.count(Project.id)).where(*project_filters)) or 0
+            project_rows = session.execute(
+                select(Project, Plan)
+                .outerjoin(Plan, Plan.id == Project.plan_id)
+                .where(*project_filters)
+                .order_by(Project.created_at.desc(), Project.id.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            ).all()
+            projects = []
+            for project, assigned_plan in project_rows:
+                effective_plan = assigned_plan or default_plan
+                projects.append({
+                    "project_id": project.public_project_id,
+                    "name": project.display_name,
+                    "status": project.status,
+                    "current_plan": _serialize_selectable_plan(effective_plan) if effective_plan else None,
+                    "plan_assignment": "project" if assigned_plan else "default" if default_plan else "platform",
+                })
+            response = make_response(jsonify(success=True, data={
+                "plans": [_serialize_selectable_plan(plan) for plan in plans],
+                "projects": projects,
+                "pagination": {
+                    "page": page,
+                    "per_page": page_size,
+                    "total": int(project_total),
+                    "pages": (project_total + page_size - 1) // page_size,
+                },
+            }))
+            return _no_store(response)
+    except (SQLAlchemyError, RuntimeError, ValueError):
+        return _service_unavailable()
+
+
+@projects_blueprint.patch("/<project_id>/plan")
+def assign_project_plan(project_id: str):
+    try:
+        with _session_factory()() as session, session.begin():
+            secret, context, failure = _resolve_request_session(session)
+            if failure is not None:
+                return failure
+            settings, auth_session = context
+            failure = _require_csrf(secret, settings, auth_session)
+            if failure is not None:
+                return failure
+
+            payload = request.get_json(silent=True)
+            if not isinstance(payload, dict) or set(payload) != {"plan_id"}:
+                return _error("invalid_request", "Request must contain only a plan_id.", 400)
+            plan_id = payload["plan_id"]
+            if not isinstance(plan_id, int) or isinstance(plan_id, bool):
+                return _error("invalid_request", "plan_id must identify an available plan.", 400)
+
+            project = session.scalar(
+                select(Project).where(
+                    Project.public_project_id == project_id,
+                    Project.owner_user_id == auth_session.user_id,
+                ).with_for_update()
+            )
+            if project is None:
+                return _error("not_found", "Project not found.", 404)
+            if project.status != "active":
+                return _error("project_archived", "Archived projects cannot change plans.", 409)
+            plan = session.scalar(
+                select(Plan).where(Plan.id == plan_id, Plan.is_selectable.is_(True)).with_for_update()
+            )
+            if plan is None:
+                return _error("invalid_request", "plan_id must identify an available plan.", 400)
+
+            project.plan_id = plan.id
+            session.add(AuditLog(
+                actor_identifier=f"user:{auth_session.user_id}",
+                actor_user_id=auth_session.user_id,
+                action="project.plan_selected",
+                target_type="project_plan",
+                target_identifier=f"{project.public_project_id}:{plan.id}",
+                outcome="success",
+            ))
+            response = make_response(jsonify(success=True, data={
+                "project_id": project.public_project_id,
+                "plan": _serialize_selectable_plan(plan),
+            }))
+            return _no_store(response)
     except (SQLAlchemyError, RuntimeError, ValueError):
         return _service_unavailable()
 

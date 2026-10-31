@@ -62,6 +62,8 @@ class DatabaseModelTests(unittest.TestCase):
         self.assertIn("owner_user_id", projects_table.columns)
         self.assertIn("public_project_id", projects_table.columns)
         self.assertIn("plan_id", projects_table.columns)
+        plans_table = Base.metadata.tables["plans"]
+        self.assertIn("is_selectable", plans_table.columns)
         self.assertIn("project_id", api_keys_table.columns)
         self.assertIn("api_key_id", usage_records_table.columns)
 
@@ -75,6 +77,20 @@ class DatabaseModelTests(unittest.TestCase):
         self.assertEqual(UsageRecord.__tablename__, "usage_records")
         self.assertEqual(Plan.__tablename__, "plans")
         self.assertEqual(AuditLog.__tablename__, "audit_logs")
+
+    def test_new_plans_default_to_private_at_the_database_level(self):
+        engine = create_engine("sqlite+pysqlite:///:memory:")
+        try:
+            Base.metadata.create_all(engine)
+            with engine.begin() as connection:
+                connection.execute(text(
+                    "INSERT INTO plans (name, request_limit_per_minute, quota_limit_per_day, "
+                    "active_api_key_limit, is_default) VALUES ('private', 0, 0, 0, false)"
+                ))
+                selectable = connection.execute(text("SELECT is_selectable FROM plans WHERE name = 'private'")).scalar_one()
+            self.assertFalse(bool(selectable))
+        finally:
+            engine.dispose()
 
 
 @unittest.skipUnless(os.getenv("TEST_DATABASE_URL"), "A dedicated PostgreSQL TEST_DATABASE_URL is required to exercise Alembic migrations.")
@@ -100,5 +116,6 @@ class DatabaseMigrationTests(unittest.TestCase):
             inspector = inspect(engine)
             self.assertTrue({"users", "projects", "api_keys", "usage_records", "plans", "audit_logs"}.issubset(inspector.get_table_names()))
             self.assertIn("role", {column["name"] for column in inspector.get_columns("users")})
+            self.assertIn("is_selectable", {column["name"] for column in inspector.get_columns("plans")})
         finally:
             engine.dispose()

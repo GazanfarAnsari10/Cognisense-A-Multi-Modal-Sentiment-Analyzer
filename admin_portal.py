@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import logging
+import json
+import os
 import re
 from datetime import datetime, timedelta, timezone
+from urllib.error import URLError
+from urllib.parse import urlsplit
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 from flask import Blueprint, current_app, jsonify, make_response, redirect, render_template, request, url_for
 from sqlalchemy import case, func, select, update
@@ -349,11 +354,12 @@ def _serialize_plan(plan: Plan):
             "request_limit_per_minute": plan.request_limit_per_minute,
             "quota_limit_per_day": plan.quota_limit_per_day,
             "active_api_key_limit": plan.active_api_key_limit, "is_default": plan.is_default,
+            "is_selectable": plan.is_selectable,
             "created_at": _timestamp(plan.created_at), "updated_at": _timestamp(plan.updated_at)}
 
 
 def _plan_payload(payload, existing: Plan | None = None):
-    allowed = {"name", "description", "request_limit_per_minute", "quota_limit_per_day", "active_api_key_limit", "is_default"}
+    allowed = {"name", "description", "request_limit_per_minute", "quota_limit_per_day", "active_api_key_limit", "is_default", "is_selectable"}
     if not isinstance(payload, dict) or not payload or set(payload) - allowed:
         return None
     values = {}
@@ -365,6 +371,9 @@ def _plan_payload(payload, existing: Plan | None = None):
             if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= MAX_PLAN_LIMIT:
                 return None
         elif field == "is_default":
+            if not isinstance(value, bool):
+                return None
+        elif field == "is_selectable":
             if not isinstance(value, bool):
                 return None
         elif field == "name":
@@ -506,6 +515,15 @@ def usage_report():
                 return _error("invalid_request", "Date range or pagination is invalid; maximum date range is 90 days.", 400)
             start, end = date_range
             page, page_size = pagination
+            successful = func.sum(case((UsageRecord.http_status_code.between(200, 399), 1), else_=0))
+            errors = func.sum(case(((UsageRecord.http_status_code >= 400) & (UsageRecord.http_status_code != 429), 1), else_=0))
+            limited = func.sum(case((UsageRecord.http_status_code == 429, 1), else_=0))
+            totals = session.execute(
+                select(func.count(UsageRecord.id), successful, errors, limited).where(
+                    UsageRecord.request_timestamp >= start,
+                    UsageRecord.request_timestamp < end,
+                )
+            ).one()
             group_expr = request.args.get("group", "project")
             if group_expr not in {"project", "user", "day", "status"}:
                 return _error("invalid_request", "group must be project, user, day, or status.", 400)
@@ -529,17 +547,75 @@ def usage_report():
                 query = select(dimension, label, func.count(UsageRecord.id))
                 group_by = (dimension,)
             base = query.where(UsageRecord.request_timestamp >= start, UsageRecord.request_timestamp < end).group_by(*group_by)
-            total = len(session.execute(base.order_by(None).subquery().select()).all())
+            total = session.scalar(select(func.count()).select_from(base.order_by(None).subquery())) or 0
             rows = session.execute(base.order_by(func.count(UsageRecord.id).desc(), dimension).offset((page - 1) * page_size).limit(page_size)).all()
             groups = [{"key": str(row[0]), "label": str(row[1]), "requests": int(row[2])} for row in rows]
             status_rows = session.execute(select(UsageRecord.http_status_code, func.count(UsageRecord.id))
                                           .where(UsageRecord.request_timestamp >= start, UsageRecord.request_timestamp < end)
                                           .group_by(UsageRecord.http_status_code).order_by(UsageRecord.http_status_code)).all()
+            day_expr = func.date(UsageRecord.request_timestamp)
+            trend_rows = session.execute(
+                select(day_expr, func.count(UsageRecord.id), successful, errors, limited)
+                .where(UsageRecord.request_timestamp >= start, UsageRecord.request_timestamp < end)
+                .group_by(day_expr)
+                .order_by(day_expr)
+            ).all()
             return _no_store(make_response(jsonify(success=True, data={"from": _timestamp(start), "to": _timestamp(end),
                 "group": group_expr, "groups": groups, "by_status": [{"status": int(row[0]), "requests": int(row[1])} for row in status_rows],
+                "metrics": {"requests": int(totals[0] or 0), "successful": int(totals[1] or 0),
+                            "errors": int(totals[2] or 0), "rate_limited": int(totals[3] or 0)},
+                "trends": [{"day": str(row[0]), "requests": int(row[1] or 0), "successful": int(row[2] or 0),
+                            "errors": int(row[3] or 0), "rate_limited": int(row[4] or 0)} for row in trend_rows],
                 "pagination": _page_data(page, page_size, total)})))
     except (SQLAlchemyError, RuntimeError, ValueError):
         return _database_failure("Admin usage report could not be loaded.")
+
+
+class _RejectHealthRedirects(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, new_url):
+        return None
+
+
+def _gateway_health_status() -> str:
+    url = os.getenv("COGNISENSE_GATEWAY_HEALTH_URL", "http://127.0.0.1:8000/api/v1/health").strip()
+    if not url:
+        return "not_configured"
+    try:
+        parsed = urlsplit(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+            return "unavailable"
+        opener = build_opener(ProxyHandler({}), _RejectHealthRedirects())
+        with opener.open(Request(url, headers={"Accept": "application/json"}), timeout=2) as response:
+            if response.status != 200:
+                return "unavailable"
+            payload = json.loads(response.read(4096))
+        if not isinstance(payload, dict) or not isinstance(payload.get("data"), dict) or payload["data"].get("status") != "ok":
+            return "unavailable"
+        return "healthy"
+    except (OSError, ValueError, URLError, TimeoutError):
+        return "unavailable"
+
+
+@admin_blueprint.get("/api/v1/admin/health")
+def health_status():
+    try:
+        with _session_factory()() as session, session.begin():
+            _, failure = _admin_context(session)
+            if failure:
+                return failure
+        try:
+            with _session_factory()() as health_session:
+                health_session.execute(select(1)).scalar_one()
+            database_status = "healthy"
+        except (SQLAlchemyError, RuntimeError, ValueError):
+            logger.error("Admin database health check failed.")
+            database_status = "unavailable"
+        return _no_store(make_response(jsonify(success=True, data={
+            "database": database_status,
+            "gateway": _gateway_health_status(),
+        })))
+    except (SQLAlchemyError, RuntimeError, ValueError):
+        return _database_failure("Admin health status could not be loaded.")
 
 
 @admin_blueprint.get("/api/v1/admin/audit")

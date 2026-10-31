@@ -3,13 +3,85 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Admin access | Cognisense</title>
+    <meta name="referrer" content="same-origin">
+    <title>Admin Dashboard | Cognisense</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/developer.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
 </head>
-<body>
-    <main>
-        <h1>Admin access</h1>
-        <p>Signed in as {{ user.name }}.</p>
-        <p>The protected administration foundation is active. No management tools are enabled in this phase.</p>
-    </main>
+<body class="dev-body dashboard-body" data-admin-user-id="{{ admin_user_id }}">
+    <div class="dashboard-shell" id="dashboard-shell">
+        <aside class="dev-sidebar">
+            <div class="sidebar-brand-row">
+                <a class="dev-brand" href="/admin" aria-label="Cognisense admin dashboard"><span class="brand-mark">C</span><span class="brand-copy">COGNISENSE <small>ADMIN</small></span></a>
+                <button class="sidebar-collapse" id="sidebar-collapse" type="button" aria-label="Collapse sidebar" aria-expanded="true" aria-controls="admin-navigation" title="Collapse sidebar"><span aria-hidden="true">‹</span></button>
+            </div>
+            <nav class="dashboard-nav" id="admin-navigation" aria-label="Admin dashboard">
+                <button type="button" class="dash-nav-item active" data-view="overview"><span aria-hidden="true">◫</span><span class="nav-label">Overview</span></button>
+                <button type="button" class="dash-nav-item" data-view="users"><span aria-hidden="true">◉</span><span class="nav-label">User Management</span></button>
+                <button type="button" class="dash-nav-item" data-view="projects"><span aria-hidden="true">▦</span><span class="nav-label">Project Management</span></button>
+                <button type="button" class="dash-nav-item" data-view="plans"><span aria-hidden="true">⇥</span><span class="nav-label">Plans &amp; Limits</span></button>
+                <button type="button" class="dash-nav-item" data-view="keys"><span aria-hidden="true">⌘</span><span class="nav-label">API Key Oversight</span></button>
+                <button type="button" class="dash-nav-item" data-view="usage"><span aria-hidden="true">▤</span><span class="nav-label">Usage</span></button>
+                <button type="button" class="dash-nav-item" data-view="audit"><span aria-hidden="true">≡</span><span class="nav-label">Audit Log</span></button>
+            </nav>
+            <div class="sidebar-bottom">
+                <a class="home-link" href="/developer/dashboard" title="Developer dashboard"><span class="sidebar-action-icon" aria-hidden="true">⌂</span><span class="sidebar-link-label">Developer dashboard</span></a>
+                <button class="logout-button" id="logout-button" type="button" title="Sign out"><span class="sidebar-action-icon" aria-hidden="true">↪</span><span class="sidebar-link-label">Sign out</span></button>
+            </div>
+        </aside>
+        <main class="dashboard-main">
+            <header class="dashboard-header">
+                <div><p class="eyebrow">Platform administration</p><h1 id="view-title">Overview</h1></div>
+                <div class="account-chip"><span class="avatar">{{ user.name[:1]|upper }}</span><span>{{ user.name }}</span></div>
+            </header>
+            <p class="global-message" id="global-message" role="status" aria-live="polite"></p>
+            <section class="view-panel" id="overview-view" aria-labelledby="view-title">
+                <div class="metric-grid" id="admin-metrics"><div class="metric-skeleton"></div><div class="metric-skeleton"></div><div class="metric-skeleton"></div><div class="metric-skeleton"></div></div>
+                <div class="section-heading"><div><p class="eyebrow">Recorded requests</p><h2>24-hour status totals</h2></div></div>
+                <div class="table-wrap" id="overview-status"></div>
+            </section>
+            <section class="view-panel" id="users-view" hidden>
+                <div class="section-heading"><div><p class="eyebrow">Accounts</p><h2>Users</h2></div><button class="button-secondary" data-refresh="users" type="button">Refresh</button></div>
+                <div class="table-wrap" id="users-table"></div><div class="admin-detail" id="user-detail" hidden></div>
+            </section>
+            <section class="view-panel" id="projects-view" hidden>
+                <div class="section-heading"><div><p class="eyebrow">All owners</p><h2>Projects</h2></div><button class="button-secondary" data-refresh="projects" type="button">Refresh</button></div>
+                <div class="table-wrap" id="projects-table"></div>
+            </section>
+            <section class="view-panel" id="plans-view" hidden>
+                <div class="section-heading"><div><p class="eyebrow">Limits apply immediately</p><h2>Plans &amp; limits</h2></div></div>
+                <form class="admin-form" id="plan-form">
+                    <input type="hidden" id="plan-id">
+                    <label>Name<input id="plan-name" maxlength="80" required></label>
+                    <label>Description<input id="plan-description" maxlength="255"></label>
+                    <label>Requests per minute<input id="plan-rpm" type="number" min="0" max="1000000" required></label>
+                    <label>Daily quota<input id="plan-quota" type="number" min="0" max="1000000" required></label>
+                    <label>Active API key limit<input id="plan-keys" type="number" min="0" max="1000000" required></label>
+                    <label class="check-label"><input id="plan-default" type="checkbox"> Default plan</label>
+                    <div class="row-actions"><button class="button-primary" type="submit" id="plan-save">Create plan</button><button class="button-secondary" type="button" id="plan-reset">Clear</button></div>
+                    <p class="muted-text">Zero means no plan-specific ceiling. Platform environment limits remain upper bounds.</p>
+                </form>
+                <div class="table-wrap" id="plans-table"></div>
+            </section>
+            <section class="view-panel" id="keys-view" hidden>
+                <div class="section-heading"><div><p class="eyebrow">Secrets never displayed</p><h2>API key oversight</h2></div></div>
+                <div class="table-wrap" id="keys-table"></div>
+            </section>
+            <section class="view-panel" id="usage-view" hidden>
+                <div class="section-heading"><div><p class="eyebrow">Maximum range: 90 days</p><h2>Usage</h2></div></div>
+                <div class="selector-row admin-filters"><label for="usage-group">Group by</label><select id="usage-group"><option value="project">Project</option><option value="user">User</option><option value="day">Day</option><option value="status">HTTP status</option></select><label for="usage-days">Days</label><select id="usage-days"><option value="1">1</option><option value="7">7</option><option value="30" selected>30</option><option value="90">90</option></select><button class="button-primary" id="usage-load" type="button">Load usage</button></div>
+                <div class="table-wrap" id="usage-table"></div>
+            </section>
+            <section class="view-panel" id="audit-view" hidden>
+                <div class="section-heading"><div><p class="eyebrow">Latest 100 records</p><h2>Administrative audit log</h2></div><button class="button-secondary" data-refresh="audit" type="button">Refresh</button></div>
+                <div class="selector-row admin-filters"><label for="audit-days">Date range</label><select id="audit-days"><option value="1">1 day</option><option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option></select><button class="button-primary" id="audit-load" type="button">Load audit</button></div>
+                <div class="table-wrap" id="audit-table"></div>
+            </section>
+        </main>
+    </div>
+    <script src="{{ url_for('static', filename='js/admin.js') }}" defer></script>
 </body>
 </html>

@@ -21,7 +21,7 @@ from auth import (
     get_authenticated_session,
     validate_session_csrf,
 )
-from database.models import ApiKey, AuthSession, Project, User
+from database.models import ApiKey, AuthSession, Plan, Project, User
 from database.session import get_session_factory
 
 logger = logging.getLogger(__name__)
@@ -255,6 +255,13 @@ def _active_key_conditions(project_id: int, now: datetime):
     )
 
 
+def _revoke_api_key_record(api_key: ApiKey, now: datetime | None = None) -> ApiKey:
+    if api_key.revoked_at is None:
+        api_key.status = "revoked"
+        api_key.revoked_at = now or datetime.now(timezone.utc)
+    return api_key
+
+
 @projects_blueprint.post("/<project_id>/keys")
 def create_api_key(project_id: str):
     try:
@@ -280,6 +287,10 @@ def create_api_key(project_id: str):
                 return _error("not_found", "Project not found.", 404)
             if project.status != "active":
                 return _error("project_archived", "Archived projects cannot manage API keys.", 409)
+
+            effective_plan = project.plan or session.scalar(select(Plan).where(Plan.is_default.is_(True)).limit(1))
+            plan_key_limit = effective_plan.active_api_key_limit if effective_plan is not None else 0
+            effective_key_limit = min(limit, plan_key_limit) if plan_key_limit > 0 else limit
 
             if session.get_bind().dialect.name == "sqlite":
                 session.execute(
@@ -307,7 +318,7 @@ def create_api_key(project_id: str):
             active_count = session.scalar(
                 select(func.count(ApiKey.id)).where(*_active_key_conditions(project.id, now))
             )
-            if active_count >= limit:
+            if active_count >= effective_key_limit:
                 return _error("active_key_limit_reached", "The active API key limit has been reached.", 409)
 
             key_prefix = API_KEY_PREFIX + secrets.token_urlsafe(12)
@@ -408,9 +419,7 @@ def revoke_api_key(project_id: str, key_id: str):
             api_key = _owned_api_key(session, project.id, key_id)
             if api_key is None:
                 return _error("not_found", "API key not found.", 404)
-            if api_key.revoked_at is None:
-                api_key.status = "revoked"
-                api_key.revoked_at = datetime.now(timezone.utc)
+            _revoke_api_key_record(api_key)
             response = make_response(
                 jsonify(success=True, data={"key": _serialize_api_key(api_key)})
             )

@@ -23,6 +23,7 @@
         <button type="button" class="dash-nav-item" data-view="keys" title="API keys" aria-label="API keys"><span aria-hidden="true">⌘</span><span class="nav-label">API keys</span></button>
         <button type="button" class="dash-nav-item" data-view="usage" title="Usage" aria-label="Usage"><span aria-hidden="true">▤</span><span class="nav-label">Usage</span></button>
         <button type="button" class="dash-nav-item" data-view="account" title="Account" aria-label="Account"><span aria-hidden="true">◉</span><span class="nav-label">Account</span></button>
+        {% if user.role == 'admin' %}<a class="dash-nav-item" href="{{ url_for('admin.dashboard') }}" title="Admin dashboard" aria-label="Admin dashboard"><span aria-hidden="true">⚙</span><span class="nav-label">Admin dashboard</span></a>{% endif %}
       </nav>
       <div class="sidebar-bottom">
         <a class="home-link" href="/" title="Back to Cognisense" aria-label="Back to Cognisense"><span class="sidebar-action-icon" aria-hidden="true">⌂</span><span class="sidebar-link-label">Back to Cognisense</span></a>

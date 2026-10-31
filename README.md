@@ -268,6 +268,31 @@ After provisioning and logging in as the admin, `GET http://localhost:5000/admin
 
 This phase provides authorization and audit foundations only. It does not provide user/plan/analytics management, admin role revocation, tamper-evident or external audit storage, MFA, or deployment-level operator identity verification. Restrict direct database and CLI access to trusted operators; the CLI's `--actor` value is an operator-supplied audit label, not a separately authenticated identity.
 
+## Phase 7B admin management
+
+The authorized `/admin` console now provides overview metrics, user inspection and account activation controls, cross-owner project inspection/archive/plan assignment, plan creation and editing, API-key metadata and revocation, bounded usage reports, and the existing audit log. Every admin API checks the Phase 7A database role. Mutations require the existing session-bound CSRF token. User deactivation revokes that user's sessions; project archiving and key revocation preserve usage history. API key hashes/secrets and user password hashes are never returned. User, project, key, usage, and audit records are paginated; usage and audit views accept date ranges up to 90 days.
+
+No additional environment variables or Alembic migration are required: RPM, daily quota, and active-key limits already exist in `plans`, and this phase uses the existing `audit_logs` table. Plan `0` means no plan-specific ceiling. For projects assigned a plan, or projects without one when a default plan is marked, each positive plan value is enforced as an additional ceiling alongside the platform environment setting; the stricter applicable ceiling wins. `COGNISENSE_RATE_LIMIT_REQUESTS` and `COGNISENSE_DEFAULT_DAILY_QUOTA` remain platform-wide ceilings, and the platform active-key cap remains `COGNISENSE_MAX_ACTIVE_KEYS_PER_PROJECT`. Project plan assignment overrides the default plan selection. There are no project-level limit override fields. The gateway queries current database plan values on admission, so plan edits and assignments take effect on the next request/key creation without restarting the server. The UI/API bounds the plan catalog to 100 records; plan limit values are capped at 1,000,000. Restart Flask and the gateway only when deploying code changes.
+
+Set `DATABASE_URL` to the same PostgreSQL database for Flask and the gateway. Run each server in a separate PowerShell terminal:
+
+```powershell
+python app.py
+python -m uvicorn api_gateway:app --host 127.0.0.1 --port 8000
+```
+
+Run the admin, gateway, key, and developer regression suites with:
+
+```powershell
+python -m unittest tests.test_admin_portal tests.test_api_gateway tests.test_api_keys tests.test_developer_portal tests.test_projects -v
+python -m compileall -q admin_portal.py api_gateway.py projects.py developer_portal.py tests/test_admin_portal.py
+git diff --check
+```
+
+Manual verification: sign in as the provisioned admin, open `/admin`, change a plan's RPM to `1`, assign it to an active project, and make two authenticated gateway requests with that project's valid API key inside one minute. The first should pass and the next should return `429`; edit the plan RPM to `2` and verify a further request is admitted until the new threshold is reached. Confirm that a regular user receives `403` from admin APIs and cannot see the Admin Dashboard link, while an unauthenticated API request receives `401`. Revoke a key in API Key Oversight and confirm the gateway rejects subsequent use of that key. The 429 and subsequent outcomes should appear in bounded usage reporting, and sensitive changes should appear in the admin audit view.
+
+This phase does not add project-specific overrides or background historical aggregation. Overview counts are computed from existing records at request time; very large deployments may require indexed reporting/rollups and externalized audit retention. Platform environment ceilings intentionally cannot be raised through the admin UI.
+
 ## Phase 6A database foundation
 
 This repository now includes the initial PostgreSQL foundation for the multi-user platform planned in later phases. The implementation is intentionally isolated from the current gateway so the existing credentials-based API behavior remains unchanged.
@@ -358,7 +383,7 @@ After confirming database keys work for every intended client and deployment, re
 
 ### Rate limits, quotas, and usage
 
-Authenticated analysis requests are limited per project across all API keys and gateway workers. Configure `COGNISENSE_RATE_LIMIT_REQUESTS` (default `60`) and `COGNISENSE_RATE_LIMIT_WINDOW_SECONDS` (default `60`) for a rolling request window. A project's assigned plan can impose an additional `request_limit_per_minute` cap over its own rolling 60-second window; both the configured window and plan window must be available. `COGNISENSE_DEFAULT_DAILY_QUOTA` (default `0`, meaning unlimited) sets a fallback rolling 24-hour quota. A positive `plans.quota_limit_per_day` is combined with that setting using the lower positive value; `0` in a plan means no plan-specific quota. Requests exceeding either limit return `429` with a `Retry-After` header. The limits are request counts, not billing units.
+Authenticated analysis requests are limited per project across all API keys and gateway workers. Configure `COGNISENSE_RATE_LIMIT_REQUESTS` (default `60`) and `COGNISENSE_RATE_LIMIT_WINDOW_SECONDS` (default `60`) for a rolling request window. A project's assigned plan, or the default plan when no project plan is assigned, can impose an additional `request_limit_per_minute` cap over its own rolling 60-second window; both the configured window and plan window must be available. `COGNISENSE_DEFAULT_DAILY_QUOTA` (default `0`, meaning unlimited) sets a fallback rolling 24-hour quota. A positive `plans.quota_limit_per_day` is combined with that setting using the lower positive value; `0` in a plan means no plan-specific quota. A positive plan `active_api_key_limit` also tightens the platform key-creation cap; `0` means no plan-specific key cap. Requests exceeding rate or quota limits return `429` with a `Retry-After` header. These plan changes are read from the database on each admission/key-creation transaction and do not require gateway restarts. The limits are request counts, not billing units.
 
 The gateway serializes admission by locking the project row in the shared database, records a reservation before invoking any analyzer, and finalizes that row with the HTTP outcome and processing duration. This coordinates multiple gateway processes using PostgreSQL and fails closed if admission/usage recording is unavailable. Rate-limited requests are also recorded but do not consume additional rate-limit or quota capacity. `usage_records` stores only the project/key foreign keys, endpoint, timestamps, HTTP status, and duration; request bodies, secrets, transcripts, filenames, and uploaded data are not stored. Legacy environment-key requests also require their mapped project ID to exist and be active in the platform database so they can be limited and tracked.
 

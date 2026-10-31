@@ -29,7 +29,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.middleware.cors import CORSMiddleware
 from werkzeug.utils import secure_filename
 
-from database.models import ApiKey, Project, UsageRecord
+from database.models import ApiKey, Plan, Project, UsageRecord
 from database.session import get_session_factory
 from dotenv import load_dotenv
 from result_export import build_export
@@ -341,13 +341,14 @@ def _reserve_usage(principal: AuthenticatedProject) -> int:
                     _retry_after(env_oldest, rate_window, now),
                     "The request limit has been reached. Try again later.",
                 )
-            elif project.plan is not None and project.plan.request_limit_per_minute > 0:
+            effective_plan = project.plan or session.scalar(select(Plan).where(Plan.is_default.is_(True)).order_by(Plan.id).limit(1))
+            if rejection is None and effective_plan is not None and effective_plan.request_limit_per_minute > 0:
                 plan_count, plan_oldest = _usage_count(
                     session,
                     project.id,
                     now - timedelta(minutes=1),
                 )
-                if plan_count >= project.plan.request_limit_per_minute:
+                if plan_count >= effective_plan.request_limit_per_minute:
                     rejection = (
                         _retry_after(plan_oldest, 60, now),
                         "The request limit has been reached. Try again later.",
@@ -357,7 +358,7 @@ def _reserve_usage(principal: AuthenticatedProject) -> int:
                 limit
                 for limit in (
                     default_daily_quota,
-                    project.plan.quota_limit_per_day if project.plan is not None else 0,
+                    effective_plan.quota_limit_per_day if effective_plan is not None else 0,
                 )
                 if limit > 0
             ]

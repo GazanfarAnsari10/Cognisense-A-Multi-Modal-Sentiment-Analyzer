@@ -42,7 +42,7 @@ def _current_user():
             if auth_session is None:
                 return None
             user = auth_session.user
-            return {"name": user.name, "email": user.email, "status": user.status}
+            return {"name": user.name, "email": user.email, "status": user.status, "role": user.role}
     except (SQLAlchemyError, RuntimeError, ValueError):
         logger.error("Developer portal authentication lookup failed.")
         return None

@@ -145,8 +145,9 @@
         project_id: project.project_id, name: project.name, status: project.status, created_at: project.created_at
       }));
       const summary = payload.data.summary;
+      const projectLimit = summary.active_project_limit === null ? 'Unlimited' : summary.active_project_limit;
       $('#metrics').innerHTML = [
-        metric('Total projects', summary.total_projects, 'Active and archived'),
+        metric('Active projects', `${summary.active_projects} / ${projectLimit}`, `${summary.total_projects} total, including archived`),
         metric('Active API keys', summary.active_keys, 'Across your projects'),
         metric('Requests, 24 hours', summary.requests_24h, `${summary.limit_responses_24h} HTTP 429 limit responses`),
         metric('Successful / failed', `${summary.successful_24h} / ${summary.failed_24h}`, 'Recorded response status')

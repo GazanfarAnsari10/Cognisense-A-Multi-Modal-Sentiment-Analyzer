@@ -14,6 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from auth import _settings, get_authenticated_session
 from database.models import ApiKey, Plan, Project, UsageRecord
 from database.session import get_session_factory
+from projects import _user_project_limit
 
 logger = logging.getLogger(__name__)
 developer_blueprint = Blueprint("developer", __name__)
@@ -107,11 +108,7 @@ def dashboard_data():
                 select(Plan).where(Plan.is_default.is_(True)).order_by(Plan.id).limit(1)
             )
             active_projects = sum(project.status == "active" for project in projects)
-            platform_project_limit = int(os.getenv("COGNISENSE_MAX_PROJECTS_PER_USER", "20"))
-            workspace_plan = default_plan
-            workspace_project_limit = (
-                workspace_plan.max_active_projects if workspace_plan else platform_project_limit
-            )
+            workspace_project_limit = _user_project_limit(session, auth_session.user_id, default_plan)
             for project in projects:
                 assigned_plan = session.get(Plan, project.plan_id) if project.plan_id is not None else None
                 plan = assigned_plan or default_plan
@@ -212,7 +209,7 @@ def dashboard_data():
                 "summary": {
                     "total_projects": len(projects),
                     "active_projects": active_projects,
-                    "active_project_limit": workspace_project_limit if workspace_project_limit > 0 else None,
+                    "active_project_limit": workspace_project_limit,
                     "active_keys": sum(item["active_keys"] for item in project_data),
                     "requests_24h": sum(item["requests_24h"] for item in project_data),
                     "successful_24h": sum(item["successful_24h"] for item in project_data),

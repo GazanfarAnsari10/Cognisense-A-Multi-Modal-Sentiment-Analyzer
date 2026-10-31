@@ -27,9 +27,6 @@ document.addEventListener("DOMContentLoaded", () => {
     // ── Form submit (ALL ORIGINAL LOGIC — UNTOUCHED) ─────────────────────
     form.addEventListener("submit", async (e) => {
         e.preventDefault();
-        renderAnalyzerChart(null);
-        resultSection.innerHTML = "<p>Analyzing...</p>";
-
         const formData = new FormData();
 
         // Check if a file is uploaded
@@ -42,10 +39,15 @@ document.addEventListener("DOMContentLoaded", () => {
             resultSection.innerHTML = "<p style='color:red;'>Please provide text or upload a file.</p>";
             return;
         }
+        const apiKey = window.requestCognisenseApiKey();
+        if (!apiKey) return;
+        renderAnalyzerChart(null);
+        resultSection.innerHTML = "<p>Analyzing...</p>";
 
         try {
             const resp = await fetch("/api/analyze/text", {
                 method: "POST",
+                headers: { "X-API-Key": apiKey },
                 body: formData
             });
 

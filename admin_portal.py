@@ -18,7 +18,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from auth import _auth_secret, _settings, get_authenticated_session, validate_session_csrf
 from database.models import ApiKey, AuditLog, AuthSession, Plan, Project, UsageRecord, User
 from database.session import get_session_factory
-from projects import _revoke_api_key_record
+from projects import _revoke_api_key_record, _user_project_limit
 
 logger = logging.getLogger(__name__)
 admin_blueprint = Blueprint("admin", __name__)
@@ -340,6 +340,40 @@ def update_project(project_id: int):
                 plan_id = payload["plan_id"]
                 if plan_id is not None and (not isinstance(plan_id, int) or isinstance(plan_id, bool) or session.get(Plan, plan_id) is None):
                     return _error("invalid_request", "plan_id must identify an existing plan or be null.", 400)
+                if project.status == "active":
+                    target_plan = session.get(Plan, plan_id) if plan_id is not None else None
+                    if session.get_bind().dialect.name == "sqlite":
+                        session.execute(
+                            update(User)
+                            .where(User.id == project.owner_user_id)
+                            .values(updated_at=User.updated_at)
+                        )
+                    session.scalar(
+                        select(User.id)
+                        .where(User.id == project.owner_user_id)
+                        .with_for_update()
+                    )
+                    active_count = session.scalar(
+                        select(func.count(Project.id)).where(
+                            Project.owner_user_id == project.owner_user_id,
+                            Project.status == "active",
+                        )
+                    ) or 0
+                    default_plan = session.scalar(
+                        select(Plan).where(Plan.is_default.is_(True)).order_by(Plan.id).limit(1)
+                    )
+                    effective_plan = target_plan or default_plan
+                    effective_limit = (
+                        effective_plan.max_active_projects
+                        if effective_plan and effective_plan.max_active_projects > 0
+                        else None
+                    )
+                    if effective_limit is not None and active_count > effective_limit:
+                        return _error(
+                            "project_limit_reached",
+                            f"The assigned plans allow up to {effective_limit} active projects. Archive projects or select an eligible plan with a higher project limit.",
+                            409,
+                        )
             if "status" in payload:
                 project.status = "archived"
                 _record_action(session, auth_session, "admin.project.archived", "project", project.id)

@@ -320,6 +320,42 @@ class AdminPortalTests(unittest.TestCase):
         self.assertIn("admin.plan.created", actions)
         self.assertIn("admin.project.plan_assigned", actions)
 
+    def test_admin_plan_assignment_respects_owner_cap_without_archiving(self):
+        self._make_admin()
+        with self.session_factory.begin() as session:
+            plan = Plan(name="Admin one-project cap", max_active_projects=1)
+            session.add(plan)
+            session.flush()
+            plan_id = plan.id
+            first = Project(
+                owner_user_id=self.user_id,
+                display_name="Admin assigned one",
+                public_project_id="admin-assigned-one",
+            )
+            second = Project(
+                owner_user_id=self.user_id,
+                display_name="Admin assigned two",
+                public_project_id="admin-assigned-two",
+            )
+            session.add_all([first, second])
+            session.flush()
+            first_id = first.id
+
+        response = self.client.patch(
+            f"/api/v1/admin/projects/{first_id}",
+            json={"plan_id": plan_id},
+            headers={"X-CSRF-Token": self.csrf_cookie},
+        )
+        self.assertEqual(response.status_code, 409)
+        with self.session_factory() as session:
+            projects = session.scalars(
+                select(Project).where(Project.public_project_id.in_(
+                    ["admin-assigned-one", "admin-assigned-two"]
+                )).order_by(Project.id)
+            ).all()
+            self.assertEqual([project.status for project in projects], ["active", "active"])
+            self.assertIsNone(projects[0].plan_id)
+
     def test_usage_grouping_and_date_bounds(self):
         self._make_admin()
         with self.session_factory.begin() as session:

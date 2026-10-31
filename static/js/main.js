@@ -1,4 +1,6 @@
 // Simple front-end interactions: dark toggle, forms, fetch APIs
+window.requestCognisenseApiKey = () => window.prompt("Enter your Cognisense project API key")?.trim() || null;
+
 document.addEventListener("DOMContentLoaded", () => {
   const body          = document.body;
   const darkToggle    = document.getElementById("modeToggle");
@@ -76,6 +78,8 @@ document.addEventListener("DOMContentLoaded", () => {
       ev.preventDefault();
       const text   = document.getElementById("textInput").value;
       const resBox = document.getElementById("result");
+      const apiKey = window.requestCognisenseApiKey();
+      if (!apiKey) return;
       renderAnalyzerChart(null);
       resBox.innerHTML = "<p>Analyzing text…</p>";
       const form = new URLSearchParams();
@@ -83,7 +87,7 @@ document.addEventListener("DOMContentLoaded", () => {
       try {
         const resp = await fetch("/api/analyze/text", {
           method: "POST",
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-API-Key': apiKey },
           body: form.toString()
         });
         const data = await resp.json();
@@ -110,11 +114,13 @@ document.addEventListener("DOMContentLoaded", () => {
       const resBox    = document.getElementById("result");
       renderAnalyzerChart(null);
       if (!fileInput.files.length) { resBox.innerHTML = "Select a file."; return; }
+      const apiKey = window.requestCognisenseApiKey();
+      if (!apiKey) return;
       resBox.innerHTML = "Uploading and analyzing audio…";
       const fd = new FormData();
       fd.append("file", fileInput.files[0]);
       try {
-        const resp = await fetch("/api/analyze/audio", { method: "POST", body: fd });
+        const resp = await fetch("/api/analyze/audio", { method: "POST", headers: { 'X-API-Key': apiKey }, body: fd });
         const data = await resp.json();
         if (!resp.ok || data.error) {
           renderAnalyzerChart(null);
@@ -139,11 +145,13 @@ document.addEventListener("DOMContentLoaded", () => {
       const resBox    = document.getElementById("result");
       renderAnalyzerChart(null);
       if (!fileInput.files.length) { resBox.innerHTML = "Select a file."; return; }
+      const apiKey = window.requestCognisenseApiKey();
+      if (!apiKey) return;
       resBox.innerHTML = "Uploading and analyzing video (may take longer)…";
       const fd = new FormData();
       fd.append("file", fileInput.files[0]);
       try {
-        const resp = await fetch("/api/analyze/video", { method: "POST", body: fd });
+        const resp = await fetch("/api/analyze/video", { method: "POST", headers: { 'X-API-Key': apiKey }, body: fd });
         const data = await resp.json();
         if (!resp.ok || data.error) {
           renderAnalyzerChart(null);

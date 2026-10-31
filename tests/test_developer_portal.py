@@ -96,6 +96,7 @@ class DeveloperPortalTests(unittest.TestCase):
                 request_limit_per_minute=4,
                 quota_limit_per_day=10,
                 active_api_key_limit=3,
+                max_active_projects=7,
                 is_default=False,
             )
             session.add(plan)
@@ -151,7 +152,7 @@ class DeveloperPortalTests(unittest.TestCase):
         self.assertEqual(data["summary"], {
             "total_projects": 1,
             "active_projects": 1,
-            "active_project_limit": 20,
+            "active_project_limit": 7,
             "active_keys": 1,
             "requests_24h": 3,
             "successful_24h": 1,
@@ -165,7 +166,7 @@ class DeveloperPortalTests(unittest.TestCase):
         self.assertEqual(project_data["rate_limit"], 4)
         self.assertEqual(project_data["rate_count"], 2)
         self.assertEqual(project_data["rate_window_seconds"], 60)
-        self.assertEqual(project_data["max_active_projects"], None)
+        self.assertEqual(project_data["max_active_projects"], 7)
         self.assertNotIn("Private Project", response.get_data(as_text=True))
         self.assertNotIn("stored-hash-never-returned", response.get_data(as_text=True))
         self.assertEqual(response.headers["Cache-Control"], "no-store, no-cache, must-revalidate, private")

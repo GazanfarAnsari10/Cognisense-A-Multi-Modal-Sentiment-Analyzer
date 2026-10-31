@@ -303,7 +303,7 @@ def _usage_count(session, project_id: int, since: datetime):
     ).one()
 
 
-def _reserve_usage(principal: AuthenticatedProject) -> int:
+def _reserve_usage(principal: AuthenticatedProject, endpoint: str = "/api/v1/analyze") -> int:
     now = datetime.now(timezone.utc)
     rejection: tuple[int, str] | None = None
     reservation_id: int | None = None
@@ -370,7 +370,7 @@ def _reserve_usage(principal: AuthenticatedProject) -> int:
                 usage = UsageRecord(
                     project_id=project.id,
                     api_key_id=principal.api_key_id,
-                    endpoint="/api/v1/analyze",
+                    endpoint=endpoint,
                     http_status_code=500,
                     processing_duration_ms=0,
                     request_timestamp=now,
@@ -383,7 +383,7 @@ def _reserve_usage(principal: AuthenticatedProject) -> int:
                     UsageRecord(
                         project_id=project.id,
                         api_key_id=principal.api_key_id,
-                        endpoint="/api/v1/analyze",
+                        endpoint=endpoint,
                         http_status_code=429,
                         processing_duration_ms=0,
                         request_timestamp=now,
@@ -491,10 +491,8 @@ class UsageFinalizationMiddleware:
 app.add_middleware(UsageFinalizationMiddleware)
 
 
-def authenticate_project(
-    request: Request,
-    api_key: str | None = Depends(API_KEY_HEADER),
-) -> AuthenticatedProject:
+def authenticate_api_key(api_key: str | None) -> AuthenticatedProject:
+    """Validate configured or database-backed API keys without reserving usage."""
     if not api_key:
         raise HTTPException(status_code=401, detail="A valid X-API-Key header is required.")
 
@@ -517,6 +515,15 @@ def authenticate_project(
         if project_id is None:
             raise HTTPException(status_code=401, detail="A valid X-API-Key header is required.")
         principal = AuthenticatedProject(project_id, None)
+
+    return principal
+
+
+def authenticate_project(
+    request: Request,
+    api_key: str | None = Depends(API_KEY_HEADER),
+) -> AuthenticatedProject:
+    principal = authenticate_api_key(api_key)
 
     usage_id = _reserve_usage(principal)
     request.state.usage_tracking = {"usage_id": usage_id, "started_at": time.monotonic()}

@@ -587,6 +587,8 @@ The dashboard shows the authenticated user's projects, active key metadata, rece
 
 Use the existing `.env.example` as a reference, but keep real values in an untracked local environment file or deployment secret manager. Required platform configuration includes a PostgreSQL `DATABASE_URL` and a unique `AUTH_SECRET_KEY` of at least 32 characters. Keep `AUTH_COOKIE_SECURE=true` in deployed HTTPS environments; `false` is only for local HTTP development. `AUTH_COOKIE_SAMESITE` accepts `Lax` or `Strict`. `COGNISENSE_TRUSTED_PROXY_HOPS` defaults to `0`. Set it only to the exact number of trusted proxies that overwrite `X-Forwarded-For` and `X-Forwarded-Proto`; never trust forwarded headers directly from arbitrary clients. The application uses those trusted values for client address throttling and secure URL handling.
 
+Flask Socket.IO accepts same-origin browser connections by default. Set `COGNISENSE_SOCKETIO_CORS_ORIGINS` to a comma-separated allowlist only when the trusted frontend is hosted on a different origin; this controls browser origins, not client authentication. The realtime analyzer remains publicly callable unless access is restricted at the application or network boundary.
+
 Install dependencies and apply additive migrations to the intended PostgreSQL database:
 
 ```powershell

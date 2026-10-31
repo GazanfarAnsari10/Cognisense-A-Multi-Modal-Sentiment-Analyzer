@@ -58,6 +58,29 @@ def _project_limit() -> int:
     return configured
 
 
+def _effective_user_project_plan(session, owner_user_id: int, default_plan=None, override=None):
+    rows = session.execute(
+        select(Project, Plan)
+        .outerjoin(Plan, Plan.id == Project.plan_id)
+        .where(Project.owner_user_id == owner_user_id, Project.status == "active")
+        .order_by(Project.updated_at.desc(), Project.id.desc())
+    ).all()
+    for project, assigned_plan in rows:
+        if override is not None and project.id == override[0]:
+            return override[1]
+        effective_plan = assigned_plan or default_plan
+        if effective_plan is not None:
+            return effective_plan
+    return default_plan
+
+
+def _user_project_limit(session, owner_user_id: int, default_plan=None, override=None):
+    plan = _effective_user_project_plan(session, owner_user_id, default_plan, override)
+    if plan is None:
+        return _project_limit()
+    return plan.max_active_projects or None
+
+
 def _active_key_limit() -> int:
     configured = current_app.config.get("MAX_ACTIVE_KEYS_PER_PROJECT")
     if configured is None:
@@ -180,7 +203,8 @@ def create_project():
                     Project.status == "active",
                 )
             )
-            effective_limit = default_plan.max_active_projects if default_plan else _project_limit()
+            account_plan = _effective_user_project_plan(session, auth_session.user_id, default_plan)
+            effective_limit = account_plan.max_active_projects if account_plan else _project_limit()
             if effective_limit > 0 and active_count >= effective_limit:
                 return _error(
                     "project_limit_reached",
@@ -195,7 +219,7 @@ def create_project():
                     display_name=name,
                     public_project_id=str(uuid.uuid4()),
                     status="active",
-                    plan_id=default_plan.id if default_plan else None,
+                    plan_id=account_plan.id if account_plan else None,
                 )
                 try:
                     with session.begin_nested():
@@ -340,16 +364,31 @@ def assign_project_plan(project_id: str):
             )
             if plan is None:
                 return _error("invalid_request", "plan_id must identify an available plan.", 400)
+            if session.get_bind().dialect.name == "sqlite":
+                session.execute(
+                    update(User)
+                    .where(User.id == auth_session.user_id)
+                    .values(updated_at=User.updated_at)
+                )
+            session.scalar(
+                select(User.id)
+                .where(User.id == auth_session.user_id)
+                .with_for_update()
+            )
             active_count = session.scalar(
                 select(func.count(Project.id)).where(
                     Project.owner_user_id == auth_session.user_id,
                     Project.status == "active",
                 )
             ) or 0
-            if plan.max_active_projects > 0 and active_count > plan.max_active_projects:
+            default_plan = session.scalar(
+                select(Plan).where(Plan.is_default.is_(True)).order_by(Plan.id).limit(1)
+            )
+            effective_limit = plan.max_active_projects or None
+            if effective_limit is not None and active_count > effective_limit:
                 return _error(
                     "project_limit_reached",
-                    f"This plan allows up to {plan.max_active_projects} active projects. Archive projects or select an eligible plan with a higher project limit.",
+                    f"Your assigned plans allow up to {effective_limit} active projects. Archive projects or select an eligible plan with a higher project limit.",
                     409,
                 )
 

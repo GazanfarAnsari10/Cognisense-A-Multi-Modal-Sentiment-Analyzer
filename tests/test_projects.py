@@ -153,6 +153,69 @@ class ProjectApiTests(unittest.TestCase):
         self.assertEqual(archived.status_code, 200)
         self.assertEqual(self._post_project("After archive").status_code, 201)
 
+    def test_selected_plan_controls_user_creation_cap(self):
+        with self.session_factory.begin() as session:
+            default_plan = Plan(name="Default workspace", max_active_projects=8, is_default=True)
+            selected_plan = Plan(name="Selected workspace", max_active_projects=2, is_selectable=True)
+            session.add_all([default_plan, selected_plan])
+            session.flush()
+            selected_plan_id = selected_plan.id
+
+        first = self._post_project("Selected plan first")
+        first_id = first.get_json()["data"]["project"]["project_id"]
+        assigned = self.client.patch(
+            f"/api/v1/projects/{first_id}/plan",
+            json={"plan_id": selected_plan_id},
+            headers={"X-CSRF-Token": self.csrf_token},
+        )
+        self.assertEqual(assigned.status_code, 200)
+        second = self._post_project("Selected plan second")
+        self.assertEqual(second.status_code, 201)
+        second_id = second.get_json()["data"]["project"]["project_id"]
+        with self.session_factory() as session:
+            second_project = session.scalar(select(Project).where(Project.public_project_id == second_id))
+            self.assertEqual(second_project.plan_id, selected_plan_id)
+        self.assertEqual(self._post_project("Selected plan third").status_code, 409)
+
+    def test_downgrade_is_rejected_when_owner_is_over_limit(self):
+        with self.session_factory.begin() as session:
+            default_plan = Plan(name="Three project default", max_active_projects=3, is_default=True)
+            restricted_plan = Plan(name="One project selectable", max_active_projects=1, is_selectable=True)
+            session.add_all([default_plan, restricted_plan])
+            session.flush()
+            restricted_plan_id = restricted_plan.id
+        first = self._post_project("Existing one")
+        second = self._post_project("Existing two")
+        self.assertEqual((first.status_code, second.status_code), (201, 201))
+        first_id = first.get_json()["data"]["project"]["project_id"]
+
+        rejected = self.client.patch(
+            f"/api/v1/projects/{first_id}/plan",
+            json={"plan_id": restricted_plan_id},
+            headers={"X-CSRF-Token": self.csrf_token},
+        )
+        self.assertEqual(rejected.status_code, 409)
+        with self.session_factory() as session:
+            project = session.scalar(select(Project).where(Project.public_project_id == first_id))
+            self.assertEqual(project.status, "active")
+            self.assertNotEqual(project.plan_id, restricted_plan_id)
+
+        second_id = second.get_json()["data"]["project"]["project_id"]
+        self.assertEqual(
+            self.client.delete(
+                f"/api/v1/projects/{second_id}", headers={"X-CSRF-Token": self.csrf_token}
+            ).status_code,
+            200,
+        )
+        self.assertEqual(
+            self.client.patch(
+                f"/api/v1/projects/{first_id}/plan",
+                json={"plan_id": restricted_plan_id},
+                headers={"X-CSRF-Token": self.csrf_token},
+            ).status_code,
+            200,
+        )
+
     def test_plan_active_key_limit_is_authoritative_over_environment_default(self):
         with self.session_factory.begin() as session:
             session.add(Plan(name="Two keys", active_api_key_limit=2, is_default=True))

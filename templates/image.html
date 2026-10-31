@@ -157,6 +157,8 @@
         alert("Please select an image file.");
         return;
       }
+      const apiKey = window.requestCognisenseApiKey();
+      if (!apiKey) return;
 
       let formData = new FormData();
       formData.append("file", fileInput.files[0]);
@@ -167,6 +169,7 @@
       try {
         const resp = await fetch("/api/analyze/image", {
           method: "POST",
+          headers: { "X-API-Key": apiKey },
           body: formData
         });
 

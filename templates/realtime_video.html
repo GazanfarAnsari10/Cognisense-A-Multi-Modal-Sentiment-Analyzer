@@ -146,21 +146,17 @@ document.addEventListener("DOMContentLoaded", () => {
   let stream = null;
   let captureInterval = null;
   let socket = null;
-  let socketApiKey = null;
 
-  const SOCKET_EVENT = "realtime_frame";
+  const SOCKET_EVENT = "public_realtime_frame";
   const SOCKET_RESPONSE = "realtime_analysis";
 
   function initSocket() {
     if (socket) return;
-    socketApiKey = window.requestCognisenseApiKey();
-    if (!socketApiKey) return;
-    socket = io({ auth: { apiKey: socketApiKey } });
+    socket = io();
     socket.on("connect", () => console.log("Socket connected", socket.id));
     socket.on("connect_error", () => {
-      frameInfo.textContent = "API key authentication failed.";
+      frameInfo.textContent = "Realtime analysis is temporarily unavailable.";
       socket = null;
-      socketApiKey = null;
     });
     socket.on(SOCKET_RESPONSE, (data) => renderAnalysis(data));
     socket.on("disconnect", () => console.log("Socket disconnected"));
@@ -217,7 +213,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!videoEl || videoEl.readyState < 2) return;
       ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
       const dataUrl = canvas.toDataURL("image/jpeg", 0.6);
-      if (socket && socket.connected) socket.emit(SOCKET_EVENT, { image: dataUrl, apiKey: socketApiKey });
+      if (socket && socket.connected) socket.emit(SOCKET_EVENT, { image: dataUrl });
     }, intervalMs);
   }
 
